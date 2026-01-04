@@ -4,7 +4,7 @@ export class UploadResponseDto {
   @ApiProperty({ description: 'Uploaded image URL', example: 'https://res.cloudinary.com/...' })
   url: string;
 
-  @ApiProperty({ description: 'Cloudinary public ID', example: 'pazaro/products/abc123' })
+  @ApiProperty({ description: 'Cloudinary public ID', example: 'pazarone/products/abc123' })
   publicId: string;
 
   @ApiProperty({ description: 'Image width', example: 1000 })

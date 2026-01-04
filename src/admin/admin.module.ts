@@ -6,7 +6,9 @@ import { Product } from '../products/entities/product.entity';
 import { AffiliateReferral } from '../affiliate/entities/affiliate-referral.entity';
 import { AffiliateCommission } from '../affiliate/entities/affiliate-commission.entity';
 import { AffiliateWithdrawal } from '../affiliate/entities/affiliate-withdrawal.entity';
+import { AffiliatePaymentMethod } from '../affiliate/entities/affiliate-payment-method.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
 import { AdminUsersService } from './admin-users.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminOrdersService } from './admin-orders.service';
@@ -22,6 +24,7 @@ import { AdminDashboardController } from './admin-dashboard.controller';
 import { PlatformModule } from '../platform/platform.module';
 import { SellerModule } from '../seller/seller.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuthModule } from '../auth/auth.module';
 import { forwardRef } from '@nestjs/common';
 
 @Module({
@@ -29,6 +32,7 @@ import { forwardRef } from '@nestjs/common';
     PlatformModule,
     SellerModule,
     forwardRef(() => NotificationsModule),
+    forwardRef(() => AuthModule),
     TypeOrmModule.forFeature([
       User,
       Order,
@@ -36,6 +40,7 @@ import { forwardRef } from '@nestjs/common';
       AffiliateReferral,
       AffiliateCommission,
       AffiliateWithdrawal,
+      AffiliatePaymentMethod,
       SellerSettings,
     ]),
   ],

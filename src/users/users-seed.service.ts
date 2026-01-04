@@ -12,7 +12,7 @@ export class UsersSeedService {
   ) {}
 
   async seedAdmin() {
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@pazaro.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@pazarone.co';
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
     const adminName = process.env.ADMIN_NAME || 'Super Admin';
 

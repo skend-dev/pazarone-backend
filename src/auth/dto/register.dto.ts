@@ -1,5 +1,12 @@
-import { IsEmail, IsString, MinLength, IsEnum, IsNotEmpty } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserType } from '../../users/entities/user.entity';
 
 export class RegisterDto {
@@ -39,5 +46,23 @@ export class RegisterDto {
   @IsEnum(UserType)
   @IsNotEmpty()
   userType: UserType;
+
+  @ApiPropertyOptional({
+    description: 'Market location (required for sellers) - "MK" for North Macedonia, "KS" for Kosovo',
+    example: 'MK',
+    enum: ['MK', 'KS'],
+  })
+  @IsString()
+  @IsOptional()
+  market?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Verification token from email verification (optional - required if email is not already verified)',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
+  @IsString()
+  @IsOptional()
+  verificationToken?: string;
 }
 

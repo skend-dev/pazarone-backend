@@ -18,17 +18,27 @@ import { Category } from './categories/entities/category.entity';
 import { SellerSettings } from './seller/entities/seller-settings.entity';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { AffiliateReferral } from './affiliate/entities/affiliate-referral.entity';
+import { AffiliateReferralClick } from './affiliate/entities/affiliate-referral-click.entity';
 import { AffiliateCommission } from './affiliate/entities/affiliate-commission.entity';
 import { AffiliateWithdrawal } from './affiliate/entities/affiliate-withdrawal.entity';
+import { AffiliatePaymentMethod } from './affiliate/entities/affiliate-payment-method.entity';
+import { PaymentMethodOtp } from './affiliate/entities/payment-method-otp.entity';
 import { PlatformModule } from './platform/platform.module';
 import { PlatformSettings } from './platform/entities/platform-settings.entity';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { Notification } from './notifications/entities/notification.entity';
 import { EmailVerification } from './auth/entities/email-verification.entity';
+import { PasswordReset } from './auth/entities/password-reset.entity';
 import { CustomerModule } from './customer/customer.module';
 import { CustomerAddress } from './customer/entities/customer-address.entity';
 import { CustomerNotificationPreferences } from './customer/entities/customer-notification-preferences.entity';
+import { ProductVariantAttribute } from './products/entities/product-variant-attribute.entity';
+import { ProductVariantValue } from './products/entities/product-variant-value.entity';
+import { ProductVariant } from './products/entities/product-variant.entity';
+import { InvoiceModule } from './invoice/invoice.module';
+import { Invoice } from './invoice/entities/invoice.entity';
+import { InvoiceItem } from './invoice/entities/invoice-item.entity';
 
 @Module({
   imports: [
@@ -48,18 +58,27 @@ import { CustomerNotificationPreferences } from './customer/entities/customer-no
         entities: [
           User,
           Product,
+          ProductVariantAttribute,
+          ProductVariantValue,
+          ProductVariant,
           Order,
           OrderItem,
           Category,
           SellerSettings,
           AffiliateReferral,
+          AffiliateReferralClick,
           AffiliateCommission,
           AffiliateWithdrawal,
+          AffiliatePaymentMethod,
+          PaymentMethodOtp,
           PlatformSettings,
           Notification,
           EmailVerification,
+          PasswordReset,
           CustomerAddress,
           CustomerNotificationPreferences,
+          Invoice,
+          InvoiceItem,
         ],
         synchronize: configService.get<string>('NODE_ENV') !== 'production',
         logging: configService.get<string>('NODE_ENV') === 'development',
@@ -78,6 +97,7 @@ import { CustomerNotificationPreferences } from './customer/entities/customer-no
     AdminModule,
     NotificationsModule,
     CustomerModule,
+    InvoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

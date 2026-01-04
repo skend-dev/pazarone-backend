@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Category, CategoryType } from './entities/category.entity';
 import { categorySeedData } from './categories.seed';
 
@@ -11,6 +11,7 @@ export class CategoriesSeedService {
   constructor(
     @InjectRepository(Category)
     private categoriesRepository: Repository<Category>,
+    private dataSource: DataSource,
   ) {}
 
   async seed() {
@@ -44,6 +45,7 @@ export class CategoriesSeedService {
           icon: catData.icon,
           type: catData.type,
           parentId: null,
+          translations: catData.translations || null,
         });
         const saved = await this.categoriesRepository.save(category);
         categoryMap.set(saved.slug, saved);
@@ -74,6 +76,7 @@ export class CategoriesSeedService {
           icon: catData.icon,
           type: catData.type,
           parentId: parent?.id || null,
+          translations: catData.translations || null,
         });
         const saved = await this.categoriesRepository.save(category);
         categoryMap.set(saved.slug, saved);
@@ -109,6 +112,7 @@ export class CategoriesSeedService {
           icon: catData.icon,
           type: catData.type,
           parentId: parent.id,
+          translations: catData.translations || null,
         });
         const saved = await this.categoriesRepository.save(category);
         categoryMap.set(saved.slug, saved);
@@ -129,10 +133,25 @@ export class CategoriesSeedService {
 
   /**
    * Clear all categories (use with caution!)
+   * First sets product categoryId to NULL, then deletes categories
    */
   async clear() {
     this.logger.warn('Clearing all categories...');
-    await this.categoriesRepository.delete({});
+    
+    // First, set all product categoryId to NULL to avoid foreign key constraint
+    await this.dataSource
+      .createQueryBuilder()
+      .update('products')
+      .set({ categoryId: null })
+      .execute();
+    
+    this.logger.log('Cleared category references from products.');
+    
+    // Now delete all categories
+    const allCategories = await this.categoriesRepository.find({ select: ['id'] });
+    if (allCategories.length > 0) {
+      await this.categoriesRepository.remove(allCategories);
+    }
     this.logger.log('All categories cleared.');
   }
 }

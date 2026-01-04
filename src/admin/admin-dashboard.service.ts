@@ -66,36 +66,85 @@ export class AdminDashboardService {
         ? ((currentMonthOrders - lastMonthOrders) / lastMonthOrders) * 100
         : 0;
 
-    // Revenue statistics
-    const [totalRevenue, currentMonthRevenue, lastMonthRevenue] =
-      await Promise.all([
-        this.ordersRepository
-          .createQueryBuilder('order')
-          .select('SUM(order.totalAmount)', 'total')
-          .where('order.status = :status', { status: OrderStatus.DELIVERED })
-          .getRawOne(),
-        this.ordersRepository
-          .createQueryBuilder('order')
-          .select('SUM(order.totalAmount)', 'total')
-          .where('order.status = :status', { status: OrderStatus.DELIVERED })
-          .andWhere('order.createdAt >= :date', { date: currentMonthStart })
-          .getRawOne(),
-        this.ordersRepository
-          .createQueryBuilder('order')
-          .select('SUM(order.totalAmount)', 'total')
-          .where('order.status = :status', { status: OrderStatus.DELIVERED })
-          .andWhere('order.createdAt >= :dateFrom', {
-            dateFrom: lastMonthStart,
-          })
-          .andWhere('order.createdAt <= :dateTo', { dateTo: lastMonthEnd })
-          .getRawOne(),
-      ]);
+    // Revenue statistics - separate by currency
+    // Use totalAmountBase for seller's base currency (consistent reporting)
+    const [
+      totalRevenueMKD,
+      totalRevenueEUR,
+      currentMonthRevenueMKD,
+      currentMonthRevenueEUR,
+      lastMonthRevenueMKD,
+      lastMonthRevenueEUR,
+    ] = await Promise.all([
+      this.ordersRepository
+        .createQueryBuilder('order')
+        .select('SUM(COALESCE(order.totalAmountBase, order.totalAmount))', 'total')
+        .where('order.status = :status', { status: OrderStatus.DELIVERED })
+        .andWhere("COALESCE(order.sellerBaseCurrency, 'MKD') = 'MKD'")
+        .getRawOne(),
+      this.ordersRepository
+        .createQueryBuilder('order')
+        .select('SUM(COALESCE(order.totalAmountBase, order.totalAmount))', 'total')
+        .where('order.status = :status', { status: OrderStatus.DELIVERED })
+        .andWhere("COALESCE(order.sellerBaseCurrency, 'MKD') = 'EUR'")
+        .getRawOne(),
+      this.ordersRepository
+        .createQueryBuilder('order')
+        .select('SUM(COALESCE(order.totalAmountBase, order.totalAmount))', 'total')
+        .where('order.status = :status', { status: OrderStatus.DELIVERED })
+        .andWhere('order.createdAt >= :date', { date: currentMonthStart })
+        .andWhere("COALESCE(order.sellerBaseCurrency, 'MKD') = 'MKD'")
+        .getRawOne(),
+      this.ordersRepository
+        .createQueryBuilder('order')
+        .select('SUM(COALESCE(order.totalAmountBase, order.totalAmount))', 'total')
+        .where('order.status = :status', { status: OrderStatus.DELIVERED })
+        .andWhere('order.createdAt >= :date', { date: currentMonthStart })
+        .andWhere("COALESCE(order.sellerBaseCurrency, 'MKD') = 'EUR'")
+        .getRawOne(),
+      this.ordersRepository
+        .createQueryBuilder('order')
+        .select('SUM(COALESCE(order.totalAmountBase, order.totalAmount))', 'total')
+        .where('order.status = :status', { status: OrderStatus.DELIVERED })
+        .andWhere('order.createdAt >= :dateFrom', {
+          dateFrom: lastMonthStart,
+        })
+        .andWhere('order.createdAt <= :dateTo', { dateTo: lastMonthEnd })
+        .andWhere("COALESCE(order.sellerBaseCurrency, 'MKD') = 'MKD'")
+        .getRawOne(),
+      this.ordersRepository
+        .createQueryBuilder('order')
+        .select('SUM(COALESCE(order.totalAmountBase, order.totalAmount))', 'total')
+        .where('order.status = :status', { status: OrderStatus.DELIVERED })
+        .andWhere('order.createdAt >= :dateFrom', {
+          dateFrom: lastMonthStart,
+        })
+        .andWhere('order.createdAt <= :dateTo', { dateTo: lastMonthEnd })
+        .andWhere("COALESCE(order.sellerBaseCurrency, 'MKD') = 'EUR'")
+        .getRawOne(),
+    ]);
 
-    const totalRevenueAmount = parseFloat(totalRevenue?.total || '0');
-    const currentMonthRevenueAmount = parseFloat(
-      currentMonthRevenue?.total || '0',
+    const totalRevenueMKDAmount = parseFloat(totalRevenueMKD?.total || '0');
+    const totalRevenueEURAmount = parseFloat(totalRevenueEUR?.total || '0');
+    const currentMonthRevenueMKDAmount = parseFloat(
+      currentMonthRevenueMKD?.total || '0',
     );
-    const lastMonthRevenueAmount = parseFloat(lastMonthRevenue?.total || '0');
+    const currentMonthRevenueEURAmount = parseFloat(
+      currentMonthRevenueEUR?.total || '0',
+    );
+    const lastMonthRevenueMKDAmount = parseFloat(
+      lastMonthRevenueMKD?.total || '0',
+    );
+    const lastMonthRevenueEURAmount = parseFloat(
+      lastMonthRevenueEUR?.total || '0',
+    );
+
+    // Calculate total revenue amount for backward compatibility
+    const totalRevenueAmount = totalRevenueMKDAmount + totalRevenueEURAmount;
+    const currentMonthRevenueAmount =
+      currentMonthRevenueMKDAmount + currentMonthRevenueEURAmount;
+    const lastMonthRevenueAmount =
+      lastMonthRevenueMKDAmount + lastMonthRevenueEURAmount;
 
     const revenueChange =
       lastMonthRevenueAmount > 0
@@ -112,10 +161,12 @@ export class AdminDashboardService {
       }),
     ]);
 
-    // Platform fee calculation
+    // Platform fee calculation - separate by currency
     const platformFeePercent =
       await this.platformSettingsService.getPlatformFeePercent();
-    const platformFee = (totalRevenueAmount * platformFeePercent) / 100;
+    const platformFeeMKD = (totalRevenueMKDAmount * platformFeePercent) / 100;
+    const platformFeeEUR = (totalRevenueEURAmount * platformFeePercent) / 100;
+    const platformFee = platformFeeMKD + platformFeeEUR;
 
     // Affiliate statistics
     const [totalAffiliateEarnings, pendingWithdrawals] = await Promise.all([
@@ -179,6 +230,16 @@ export class AdminDashboardService {
         },
       },
       revenue: {
+        // Separated by currency
+        totalMKD: Math.round(totalRevenueMKDAmount),
+        totalEUR: Math.round(totalRevenueEURAmount * 100) / 100,
+        currentMonthMKD: Math.round(currentMonthRevenueMKDAmount),
+        currentMonthEUR: Math.round(currentMonthRevenueEURAmount * 100) / 100,
+        lastMonthMKD: Math.round(lastMonthRevenueMKDAmount),
+        lastMonthEUR: Math.round(lastMonthRevenueEURAmount * 100) / 100,
+        platformFeeMKD: Math.round(platformFeeMKD),
+        platformFeeEUR: Math.round(platformFeeEUR * 100) / 100,
+        // Legacy totals for backward compatibility
         total: Math.round(totalRevenueAmount * 100) / 100,
         currentMonth: Math.round(currentMonthRevenueAmount * 100) / 100,
         lastMonth: Math.round(lastMonthRevenueAmount * 100) / 100,

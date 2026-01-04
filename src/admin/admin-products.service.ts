@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,7 +13,8 @@ import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationType } from '../notifications/entities/notification.entity';
-import { forwardRef, Inject } from '@nestjs/common';
+import { EmailService } from '../auth/services/email.service';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AdminProductsService {
@@ -20,10 +23,14 @@ export class AdminProductsService {
     private productsRepository: Repository<Product>,
     @InjectRepository(SellerSettings)
     private sellerSettingsRepository: Repository<SellerSettings>,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
     @Inject(forwardRef(() => NotificationsGateway))
     private notificationsGateway: NotificationsGateway,
+    @Inject(forwardRef(() => EmailService))
+    private emailService: EmailService,
   ) {}
 
   async findAll(
@@ -152,6 +159,20 @@ export class AdminProductsService {
         product.sellerId,
         notification,
       );
+
+      // Send email notification to seller
+      const seller = await this.usersRepository.findOne({
+        where: { id: product.sellerId },
+      });
+      if (seller?.email) {
+        await this.emailService.sendSellerNotification(
+          seller.email,
+          'product_approved',
+          {
+            productName: updatedProduct.name,
+          },
+        );
+      }
     } catch (error) {
       // Log error but don't fail approval
       console.error(
@@ -203,6 +224,21 @@ export class AdminProductsService {
         product.sellerId,
         notification,
       );
+
+      // Send email notification to seller
+      const seller = await this.usersRepository.findOne({
+        where: { id: product.sellerId },
+      });
+      if (seller?.email) {
+        await this.emailService.sendSellerNotification(
+          seller.email,
+          'product_rejected',
+          {
+            productName: updatedProduct.name,
+            rejectionMessage: message,
+          },
+        );
+      }
     } catch (error) {
       // Log error but don't fail rejection
       console.error(

@@ -1,4 +1,12 @@
-import { Controller, Post, Body, Get, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Query,
+  BadRequestException,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -16,10 +24,13 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
 import { CheckEmailVerifiedDto } from './dto/check-email-verified.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
 import { EmailVerificationService } from './services/email-verification.service';
+import { PasswordResetService } from './services/password-reset.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -27,6 +38,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly emailVerificationService: EmailVerificationService,
+    private readonly passwordResetService: PasswordResetService,
   ) {}
 
   @Post('signup')
@@ -230,6 +242,84 @@ export class AuthController {
     return {
       email: checkEmailVerifiedDto.email,
       verified: isVerified,
+    };
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({
+    summary: 'Request password reset',
+    description: 'Send password reset email to the user',
+  })
+  @ApiQuery({
+    name: 'baseUrl',
+    required: false,
+    type: String,
+    description: 'Frontend URL for password reset link (defaults to FRONTEND_URL env var or http://localhost:3000)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset email sent successfully (if email exists)',
+    schema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          example: 'If the email exists, a password reset link has been sent',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid email address' })
+  async forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+    @Query('baseUrl') baseUrl?: string,
+  ) {
+    const frontendUrl =
+      baseUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
+    await this.passwordResetService.requestPasswordReset(
+      forgotPasswordDto.email,
+      frontendUrl,
+    );
+    return {
+      message:
+        'If the email exists, a password reset link has been sent. Please check your email.',
+    };
+  }
+
+  @Post('reset-password')
+  @ApiOperation({
+    summary: 'Reset password using token',
+    description: 'Reset password using the token from password reset email',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          example: 'Password has been reset successfully',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid token, expired token, or passwords do not match',
+  })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    if (resetPasswordDto.newPassword !== resetPasswordDto.confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
+    await this.passwordResetService.resetPassword(
+      resetPasswordDto.token,
+      resetPasswordDto.newPassword,
+    );
+
+    return {
+      message: 'Password has been reset successfully',
     };
   }
 }

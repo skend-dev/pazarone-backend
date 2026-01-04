@@ -26,6 +26,8 @@ export class PlatformSettingsService {
       settings = this.platformSettingsRepository.create({
         key: this.DEFAULT_KEY,
         affiliateMinWithdrawalThreshold: 1000,
+        affiliateCommissionMin: 0,
+        affiliateCommissionMax: 100,
         platformFeePercent: 7.0,
       });
       settings = await this.platformSettingsRepository.save(settings);
@@ -46,6 +48,17 @@ export class PlatformSettingsService {
     return parseFloat(settings.platformFeePercent.toString());
   }
 
+  // Get affiliate commission min and max
+  async getAffiliateCommissionMin(): Promise<number> {
+    const settings = await this.getSettings();
+    return parseFloat(settings.affiliateCommissionMin.toString());
+  }
+
+  async getAffiliateCommissionMax(): Promise<number> {
+    const settings = await this.getSettings();
+    return parseFloat(settings.affiliateCommissionMax.toString());
+  }
+
   // Update platform settings
   async updateSettings(updates: Partial<PlatformSettings>): Promise<PlatformSettings> {
     const settings = await this.getSettings();
@@ -54,8 +67,20 @@ export class PlatformSettingsService {
       settings.affiliateMinWithdrawalThreshold = updates.affiliateMinWithdrawalThreshold;
     }
 
+    if (updates.affiliateCommissionMin !== undefined) {
+      settings.affiliateCommissionMin = updates.affiliateCommissionMin;
+    }
+
+    if (updates.affiliateCommissionMax !== undefined) {
+      settings.affiliateCommissionMax = updates.affiliateCommissionMax;
+    }
+
     if (updates.platformFeePercent !== undefined) {
       settings.platformFeePercent = updates.platformFeePercent;
+    }
+
+    if (updates.bankTransferDetails !== undefined) {
+      settings.bankTransferDetails = updates.bankTransferDetails;
     }
 
     return await this.platformSettingsRepository.save(settings);

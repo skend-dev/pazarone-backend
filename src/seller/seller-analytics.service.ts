@@ -319,39 +319,69 @@ export class SellerAnalyticsService {
       relations: ['items', 'items.product'],
     });
 
-    // Calculate total revenue
-    let totalRevenue = 0;
-    let totalAffiliateCommission = 0;
+    // Calculate total revenue - separate by currency
+    let totalRevenueMKD = 0;
+    let totalRevenueEUR = 0;
+    let totalAffiliateCommissionMKD = 0;
+    let totalAffiliateCommissionEUR = 0;
 
     orders.forEach((order) => {
-      // Add order total to revenue
-      totalRevenue += parseFloat(order.totalAmount.toString());
+      // Use totalAmountBase (seller's base currency) for consistent reporting
+      const orderTotalBase = order.totalAmountBase
+        ? parseFloat(order.totalAmountBase.toString())
+        : parseFloat(order.totalAmount.toString()); // Fallback for legacy orders
+      const sellerCurrency = order.sellerBaseCurrency || 'MKD';
 
-      // Calculate affiliate commission for each item
+      // Add order total to revenue in seller's base currency
+      if (sellerCurrency === 'MKD') {
+        totalRevenueMKD += orderTotalBase;
+      } else if (sellerCurrency === 'EUR') {
+        totalRevenueEUR += orderTotalBase;
+      }
+
+      // Calculate affiliate commission for each item using base prices
       order.items.forEach((item) => {
-        const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+        const itemTotalBase =
+          parseFloat(item.basePrice?.toString() || item.price.toString()) *
+          item.quantity;
         const affiliateCommissionPercent =
           item.product?.affiliateCommission || 0;
         const itemAffiliateCommission =
-          (itemTotal * affiliateCommissionPercent) / 100;
-        totalAffiliateCommission += itemAffiliateCommission;
+          (itemTotalBase * affiliateCommissionPercent) / 100;
+
+        if (sellerCurrency === 'MKD') {
+          totalAffiliateCommissionMKD += itemAffiliateCommission;
+        } else if (sellerCurrency === 'EUR') {
+          totalAffiliateCommissionEUR += itemAffiliateCommission;
+        }
       });
     });
 
     // Get seller-specific platform fee or default
     const platformFeePercent =
       await this.sellerSettingsService.getPlatformFeePercent(sellerId);
-    const platformFee = (totalRevenue * platformFeePercent) / 100;
 
-    // Calculate net revenue
-    const netRevenue = totalRevenue - platformFee - totalAffiliateCommission;
+    // Calculate platform fees and net revenue per currency
+    const platformFeeMKD = (totalRevenueMKD * platformFeePercent) / 100;
+    const platformFeeEUR = (totalRevenueEUR * platformFeePercent) / 100;
+    const netRevenueMKD =
+      totalRevenueMKD - platformFeeMKD - totalAffiliateCommissionMKD;
+    const netRevenueEUR =
+      totalRevenueEUR - platformFeeEUR - totalAffiliateCommissionEUR;
 
     return {
-      totalRevenue: Math.round(totalRevenue * 100) / 100,
-      platformFee: Math.round(platformFee * 100) / 100,
+      // MKD totals
+      totalRevenueMKD: Math.round(totalRevenueMKD),
+      platformFeeMKD: Math.round(platformFeeMKD),
+      affiliateCommissionMKD: Math.round(totalAffiliateCommissionMKD),
+      netRevenueMKD: Math.round(netRevenueMKD),
+      // EUR totals
+      totalRevenueEUR: Math.round(totalRevenueEUR * 100) / 100,
+      platformFeeEUR: Math.round(platformFeeEUR * 100) / 100,
+      affiliateCommissionEUR: Math.round(totalAffiliateCommissionEUR * 100) / 100,
+      netRevenueEUR: Math.round(netRevenueEUR * 100) / 100,
+      // Metadata
       platformFeePercent,
-      affiliateCommission: Math.round(totalAffiliateCommission * 100) / 100,
-      netRevenue: Math.round(netRevenue * 100) / 100,
       period: {
         start: start.toISOString(),
         end: end.toISOString(),

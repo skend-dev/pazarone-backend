@@ -26,6 +26,9 @@ export class User {
   @Column()
   name: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  phone: string | null;
+
   @Column()
   password: string;
 
@@ -35,6 +38,9 @@ export class User {
     default: UserType.SELLER,
   })
   userType: UserType;
+
+  @Column({ type: 'varchar', nullable: true })
+  market: string | null; // 'MK' for North Macedonia, 'KS' for Kosovo
 
   @CreateDateColumn()
   createdAt: Date;

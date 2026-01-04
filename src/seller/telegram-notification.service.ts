@@ -79,7 +79,7 @@ export class TelegramNotificationService {
     const itemsList = order.items
       .map(
         (item) =>
-          `  • ${item.productName} x${item.quantity} - $${parseFloat(item.price.toString()).toFixed(2)}`,
+          `  • ${item.productName} x${item.quantity} - ${parseFloat(item.price.toString()).toFixed(2)} MKD`,
       )
       .join('\n');
 
@@ -111,7 +111,7 @@ export class TelegramNotificationService {
 <b>${emoji} ${title}</b>
 
 <b>Order Number:</b> ${order.orderNumber}
-<b>Total Amount:</b> $${parseFloat(order.totalAmount.toString()).toFixed(2)}
+<b>Total Amount:</b> ${parseFloat(order.totalAmount.toString()).toFixed(2)} MKD
 <b>Status:</b> ${order.status}${explanationSection}
 <b>Customer:</b>
   Name: ${order.customer?.name || 'N/A'}

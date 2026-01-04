@@ -20,7 +20,7 @@ export class CloudinaryService {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: `pazaro/${folder}`,
+          folder: `pazarone/${folder}`,
           resource_type: 'image',
           transformation: [
             // Limit dimensions to 1000x1000px max (maintains aspect ratio)

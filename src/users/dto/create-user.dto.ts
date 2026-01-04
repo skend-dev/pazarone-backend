@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsEnum, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsEnum, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
 import { UserType } from '../entities/user.entity';
 
 export class CreateUserDto {
@@ -19,5 +19,10 @@ export class CreateUserDto {
   @IsEnum(UserType)
   @IsNotEmpty()
   userType: UserType;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['MK', 'KS'])
+  market?: string;
 }
 

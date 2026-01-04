@@ -13,10 +13,7 @@ import { User, UserType } from '../users/entities/user.entity';
 import { CommissionStatus } from './entities/affiliate-commission.entity';
 import { WithdrawalStatus } from './entities/affiliate-withdrawal.entity';
 import { RequestWithdrawalDto } from './dto/request-withdrawal.dto';
-import {
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 @ApiTags('affiliate-dashboard')
 @ApiBearerAuth('JWT-auth')
@@ -27,14 +24,17 @@ export class AffiliateDashboardController {
 
   private validateAffiliate(user: User) {
     if (user.userType !== UserType.AFFILIATE) {
-      throw new ForbiddenException('This endpoint is only available for affiliate users');
+      throw new ForbiddenException(
+        'This endpoint is only available for affiliate users',
+      );
     }
   }
 
   @Get('stats')
   @ApiOperation({
     summary: 'Get affiliate dashboard statistics',
-    description: 'Returns referral code, link, clicks, orders, earnings breakdown, available balance, and withdrawal information',
+    description:
+      'Returns referral code, link, clicks, orders, earnings breakdown, available balance, and withdrawal information',
   })
   @ApiResponse({
     status: 200,
@@ -43,16 +43,48 @@ export class AffiliateDashboardController {
       type: 'object',
       properties: {
         referralCode: { type: 'string', example: 'AFF-ABC123' },
-        referralLink: { type: 'string', example: 'http://localhost:3000?ref=AFF-ABC123' },
+        referralLink: {
+          type: 'string',
+          example: 'http://localhost:3000?ref=AFF-ABC123',
+        },
         totalClicks: { type: 'number', example: 150 },
         totalOrders: { type: 'number', example: 25 },
-        pendingEarnings: { type: 'number', example: 100.50 },
-        approvedEarnings: { type: 'number', example: 500.00 },
-        paidEarnings: { type: 'number', example: 300.00 },
-        totalEarnings: { type: 'number', example: 800.00 },
-        availableBalance: { type: 'number', example: 450.00 },
+        pendingEarnings: { type: 'number', example: 100.5 },
+        approvedEarnings: { type: 'number', example: 500.0 },
+        paidEarnings: { type: 'number', example: 300.0 },
+        totalEarnings: { type: 'number', example: 800.0 },
+        availableBalance: {
+          type: 'number',
+          example: 450.0,
+          description:
+            'Available balance after subtracting pending/approved withdrawals',
+        },
+        pendingWithdrawals: {
+          type: 'number',
+          example: 50.0,
+          description:
+            'Total amount locked in pending/approved withdrawal requests',
+        },
         minimumWithdrawal: { type: 'number', example: 1000 },
-        canWithdraw: { type: 'boolean', example: false },
+        canWithdraw: {
+          type: 'boolean',
+          example: false,
+          description:
+            'Whether user can withdraw (must meet minimum threshold AND not have withdrawal this month)',
+        },
+        hasWithdrawalThisMonth: {
+          type: 'boolean',
+          example: false,
+          description: 'Whether a withdrawal was already requested this month',
+        },
+        nextWithdrawalDate: {
+          type: 'string',
+          format: 'date-time',
+          nullable: true,
+          example: '2024-02-01T00:00:00Z',
+          description:
+            'Date when next withdrawal can be requested (null if can request now)',
+        },
         pendingCount: { type: 'number', example: 5 },
         approvedCount: { type: 'number', example: 10 },
         paidCount: { type: 'number', example: 8 },
@@ -60,7 +92,10 @@ export class AffiliateDashboardController {
     },
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - user is not an affiliate' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
   getStats(@CurrentUser() user: User) {
     this.validateAffiliate(user);
     return this.affiliateService.getDashboardStats(user.id);
@@ -69,7 +104,8 @@ export class AffiliateDashboardController {
   @Get('referral-code')
   @ApiOperation({
     summary: 'Get or create referral code',
-    description: 'Returns the affiliate referral code, creates one if it does not exist',
+    description:
+      'Returns the affiliate referral code, creates one if it does not exist',
   })
   @ApiResponse({
     status: 200,
@@ -78,15 +114,23 @@ export class AffiliateDashboardController {
       type: 'object',
       properties: {
         referralCode: { type: 'string', example: 'AFF-ABC123' },
-        referralLink: { type: 'string', example: 'http://localhost:3000?ref=AFF-ABC123' },
+        referralLink: {
+          type: 'string',
+          example: 'http://localhost:3000?ref=AFF-ABC123',
+        },
       },
     },
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - user is not an affiliate' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
   async getReferralCode(@CurrentUser() user: User) {
     this.validateAffiliate(user);
-    const referralCode = await this.affiliateService.getOrCreateReferralCode(user.id);
+    const referralCode = await this.affiliateService.getOrCreateReferralCode(
+      user.id,
+    );
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     return {
       referralCode,
@@ -97,7 +141,8 @@ export class AffiliateDashboardController {
   @Post('withdraw')
   @ApiOperation({
     summary: 'Request withdrawal',
-    description: 'Request a withdrawal of approved earnings. Minimum withdrawal threshold must be met.',
+    description:
+      'Request a withdrawal of approved earnings. Minimum withdrawal threshold must be met.',
   })
   @ApiResponse({
     status: 201,
@@ -113,9 +158,16 @@ export class AffiliateDashboardController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Bad request - insufficient balance or below minimum threshold' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - insufficient balance or below minimum threshold',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - user is not an affiliate' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
   async requestWithdrawal(
     @CurrentUser() user: User,
     @Body() requestWithdrawalDto: RequestWithdrawalDto,
@@ -127,7 +179,7 @@ export class AffiliateDashboardController {
       requestWithdrawalDto.paymentMethod,
       requestWithdrawalDto.paymentDetails,
     );
-    
+
     // Format response to match frontend expectations
     return {
       success: true,
@@ -146,17 +198,33 @@ export class AffiliateDashboardController {
     summary: 'Get withdrawal history',
     description: 'Returns paginated list of withdrawal requests',
   })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 20)',
+  })
   @ApiQuery({
     name: 'status',
     required: false,
     enum: WithdrawalStatus,
     description: 'Filter by withdrawal status',
   })
-  @ApiResponse({ status: 200, description: 'Withdrawals retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Withdrawals retrieved successfully',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - user is not an affiliate' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
   getWithdrawals(
     @CurrentUser() user: User,
     @Query('page') page?: number,
@@ -172,4 +240,3 @@ export class AffiliateDashboardController {
     );
   }
 }
-

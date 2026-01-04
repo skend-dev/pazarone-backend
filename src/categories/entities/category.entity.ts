@@ -23,7 +23,14 @@ export class Category {
   id: string;
 
   @Column()
-  name: string;
+  name: string; // Default name (can be used as English or primary language)
+
+  @Column('jsonb', { nullable: true })
+  translations: {
+    mk?: string; // Macedonian
+    sq?: string; // Albanian
+    tr?: string; // Turkish
+  } | null;
 
   @Column({ unique: true })
   @Index()

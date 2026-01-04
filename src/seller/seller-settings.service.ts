@@ -16,6 +16,8 @@ import { UpdatePaymentsDto } from './dto/update-payments.dto';
 import { UpdateNotificationsDto } from './dto/update-notifications.dto';
 import { UpdateShippingDto } from './dto/update-shipping.dto';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
+import { EmailService } from '../auth/services/email.service';
+import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
 export class SellerSettingsService {
@@ -25,6 +27,8 @@ export class SellerSettingsService {
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     private platformSettingsService: PlatformSettingsService,
+    @Inject(forwardRef(() => EmailService))
+    private emailService: EmailService,
   ) {}
 
   async getSettings(sellerId: string) {
@@ -50,10 +54,15 @@ export class SellerSettingsService {
       throw new NotFoundException('User not found');
     }
 
+    // Get platform fee (seller-specific or default)
+    const platformFeePercent = await this.getPlatformFeePercent(sellerId);
+    const isUsingDefaultFee = settings.platformFeePercent === null;
+
     return {
       account: {
         email: user.email,
         phone: settings.phone,
+        market: user.market || 'MK', // Display current market (read-only)
       },
       store: {
         name: settings.storeName,
@@ -67,7 +76,12 @@ export class SellerSettingsService {
         bankAccount: settings.bankAccount
           ? this.maskBankAccount(settings.bankAccount)
           : null,
-        taxId: settings.taxId,
+        bankName: settings.bankName || null,
+        accountNumber: settings.accountNumber || null,
+        accountHolder: settings.accountHolder || null,
+        iban: settings.iban || null,
+        swift: settings.swift || null,
+        taxId: settings.taxId || null,
       },
       notifications: {
         orders: settings.notificationsOrders,
@@ -76,8 +90,26 @@ export class SellerSettingsService {
         promotions: settings.notificationsPromotions,
         telegramChatId: settings.telegramChatId,
       },
+      platformFee: {
+        percent: platformFeePercent,
+        isDefault: isUsingDefaultFee,
+      },
       verified: settings.verified || false,
+      paymentRestricted: settings.paymentRestricted || false,
+      paymentRestrictedAt: settings.paymentRestrictedAt
+        ? settings.paymentRestrictedAt.toISOString()
+        : null,
     };
+  }
+
+  /**
+   * Check if seller has payment restrictions
+   */
+  async hasPaymentRestriction(sellerId: string): Promise<boolean> {
+    const settings = await this.settingsRepository.findOne({
+      where: { sellerId },
+    });
+    return settings?.paymentRestricted || false;
   }
 
   async updateAccount(sellerId: string, updateAccountDto: UpdateAccountDto) {
@@ -96,8 +128,12 @@ export class SellerSettingsService {
         throw new BadRequestException('Email already in use');
       }
       user.email = updateAccountDto.email;
-      await this.usersRepository.save(user);
     }
+
+    // Market cannot be changed after registration - it's set during signup only
+    // This prevents accidental changes that could affect product pricing
+
+    await this.usersRepository.save(user);
 
     let settings = await this.settingsRepository.findOne({
       where: { sellerId },
@@ -121,6 +157,7 @@ export class SellerSettingsService {
     return {
       email: user.email,
       phone: settings.phone,
+      market: user.market || 'MK', // Return current market (read-only)
     };
   }
 
@@ -150,6 +187,17 @@ export class SellerSettingsService {
     const hashedPassword = await bcrypt.hash(updatePasswordDto.newPassword, 10);
     user.password = hashedPassword;
     await this.usersRepository.save(user);
+
+    // Send password change confirmation email
+    try {
+      await this.emailService.sendPasswordChangeConfirmation(user.email);
+    } catch (error) {
+      // Log error but don't fail password change
+      console.error(
+        `Failed to send password change confirmation email to ${user.email}:`,
+        error,
+      );
+    }
 
     return {
       success: true,
@@ -207,6 +255,21 @@ export class SellerSettingsService {
     if (updatePaymentsDto.bankAccount !== undefined) {
       settings.bankAccount = updatePaymentsDto.bankAccount;
     }
+    if (updatePaymentsDto.bankName !== undefined) {
+      settings.bankName = updatePaymentsDto.bankName;
+    }
+    if (updatePaymentsDto.accountNumber !== undefined) {
+      settings.accountNumber = updatePaymentsDto.accountNumber;
+    }
+    if (updatePaymentsDto.accountHolder !== undefined) {
+      settings.accountHolder = updatePaymentsDto.accountHolder;
+    }
+    if (updatePaymentsDto.iban !== undefined) {
+      settings.iban = updatePaymentsDto.iban;
+    }
+    if (updatePaymentsDto.swift !== undefined) {
+      settings.swift = updatePaymentsDto.swift;
+    }
     if (updatePaymentsDto.taxId !== undefined) {
       settings.taxId = updatePaymentsDto.taxId;
     }
@@ -217,7 +280,12 @@ export class SellerSettingsService {
       bankAccount: settings.bankAccount
         ? this.maskBankAccount(settings.bankAccount)
         : null,
-      taxId: settings.taxId,
+      bankName: settings.bankName || null,
+      accountNumber: settings.accountNumber || null,
+      accountHolder: settings.accountHolder || null,
+      iban: settings.iban || null,
+      swift: settings.swift || null,
+      taxId: settings.taxId || null,
     };
   }
 

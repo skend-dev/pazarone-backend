@@ -34,7 +34,7 @@ CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
 # Admin User Configuration (optional - for seeding super admin)
-ADMIN_EMAIL=admin@pazaro.com
+ADMIN_EMAIL=admin@pazarone.co
 ADMIN_PASSWORD=admin123
 ADMIN_NAME=Super Admin
 ```
@@ -75,7 +75,7 @@ ADMIN_NAME=Super Admin
    - API Key
    - API Secret
 3. Add these credentials to your `.env` file (see Environment Variables section above)
-4. Images will be uploaded to the `pazaro/products` folder in your Cloudinary account
+4. Images will be uploaded to the `pazarone/products` folder in your Cloudinary account
 
 ## Telegram Bot Setup (for Seller Notifications)
 
@@ -115,7 +115,7 @@ npm run seed:admin
 
 This will create a super admin user with the following default credentials:
 
-- **Email:** `admin@pazaro.com` (or value from `ADMIN_EMAIL` env variable)
+- **Email:** `admin@pazarone.co` (or value from `ADMIN_EMAIL` env variable)
 - **Password:** `admin123` (or value from `ADMIN_PASSWORD` env variable)
 - **Name:** `Super Admin` (or value from `ADMIN_NAME` env variable)
 
@@ -282,7 +282,7 @@ Content-Type: multipart/form-data
   "images": [
     {
       "url": "https://res.cloudinary.com/.../image1.jpg",
-      "publicId": "pazaro/products/abc123",
+      "publicId": "pazarone/products/abc123",
       "width": 1000,
       "height": 800,
       "bytes": 245678

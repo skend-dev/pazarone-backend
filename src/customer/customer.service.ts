@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
@@ -15,6 +16,8 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { EmailService } from '../auth/services/email.service';
+import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
 export class CustomerService {
@@ -26,6 +29,8 @@ export class CustomerService {
     @InjectRepository(CustomerNotificationPreferences)
     private notificationPreferencesRepository: Repository<CustomerNotificationPreferences>,
     private usersService: UsersService,
+    @Inject(forwardRef(() => EmailService))
+    private emailService: EmailService,
   ) {}
 
   /**
@@ -53,6 +58,10 @@ export class CustomerService {
       user.name = updateProfileDto.name;
     }
 
+    if (updateProfileDto.phone !== undefined) {
+      user.phone = updateProfileDto.phone || null;
+    }
+
     return await this.usersRepository.save(user);
   }
 
@@ -63,9 +72,22 @@ export class CustomerService {
     customerId: string,
     currentPassword: string,
     newPassword: string,
+    confirmPassword: string,
   ): Promise<void> {
     const user = await this.usersService.findOne(customerId);
     this.validateCustomer(user);
+
+    // Validate confirmPassword matches newPassword
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('confirmPassword must match newPassword');
+    }
+
+    // Validate new password is different from current password
+    if (currentPassword === newPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
 
     // Validate current password
     const isPasswordValid = await bcrypt.compare(
@@ -74,11 +96,22 @@ export class CustomerService {
     );
 
     if (!isPasswordValid) {
-      throw new BadRequestException('Current password is incorrect');
+      throw new UnauthorizedException('Current password is incorrect');
     }
 
     // Update password
     await this.usersService.updatePassword(user.id, newPassword);
+
+    // Send password change confirmation email
+    try {
+      await this.emailService.sendPasswordChangeConfirmation(user.email);
+    } catch (error) {
+      // Log error but don't fail password change
+      console.error(
+        `Failed to send password change confirmation email to ${user.email}:`,
+        error,
+      );
+    }
   }
 
   /**

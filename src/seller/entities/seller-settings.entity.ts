@@ -37,7 +37,22 @@ export class SellerSettings {
 
   // Payment settings
   @Column({ type: 'varchar', nullable: true })
-  bankAccount: string | null;
+  bankAccount: string | null; // Legacy field
+
+  @Column({ type: 'varchar', nullable: true })
+  bankName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  accountNumber: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  accountHolder: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  iban: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  swift: string | null;
 
   @Column({ type: 'varchar', nullable: true })
   taxId: string | null;
@@ -71,6 +86,13 @@ export class SellerSettings {
 
   @Column({ type: 'varchar', nullable: true })
   telegramChatId: string | null;
+
+  // Payment restriction flags
+  @Column({ default: false })
+  paymentRestricted: boolean; // True if seller has overdue invoices (restricts orders and listings)
+
+  @Column({ type: 'timestamp', nullable: true })
+  paymentRestrictedAt: Date | null; // When payment restriction was applied
 
   @CreateDateColumn()
   createdAt: Date;

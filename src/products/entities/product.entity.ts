@@ -12,6 +12,8 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { Category } from '../../categories/entities/category.entity';
 import { OrderItem } from '../../orders/entities/order-item.entity';
+import { ProductVariantAttribute } from './product-variant-attribute.entity';
+import { ProductVariant } from './product-variant.entity';
 
 export enum ProductStatus {
   ACTIVE = 'active',
@@ -51,7 +53,13 @@ export class Product {
   category: Category | null;
 
   @Column('decimal', { precision: 10, scale: 2 })
-  price: number;
+  price: number; // Legacy field - kept for backward compatibility
+
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  basePrice: number | null; // Base price in seller's market currency
+
+  @Column({ type: 'varchar', length: 3, nullable: true, default: 'MKD' })
+  baseCurrency: string | null; // 'MKD' or 'EUR' - determined by seller's market
 
   @Column('int', { default: 0 })
   stock: number;
@@ -98,4 +106,19 @@ export class Product {
 
   @OneToMany(() => OrderItem, (orderItem) => orderItem.product)
   orderItems: OrderItem[];
+
+  @OneToMany(
+    () => ProductVariantAttribute,
+    (attribute) => attribute.product,
+    { cascade: true },
+  )
+  variantAttributes: ProductVariantAttribute[];
+
+  @OneToMany(() => ProductVariant, (variant) => variant.product, {
+    cascade: true,
+  })
+  variants: ProductVariant[];
+
+  @Column({ default: false })
+  hasVariants: boolean; // Whether this product has variants
 }

@@ -1,9 +1,17 @@
-import { Controller, Get, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { AffiliateService } from './affiliate.service';
 
@@ -16,12 +24,20 @@ export class AffiliatePublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Track referral link click',
-    description: 'Increments the click count for a referral code. This endpoint can be called when a user clicks on an affiliate link.',
+    description:
+      'Increments the click count for a referral code. This endpoint can be called when a user clicks on an affiliate link. Optionally accepts productId for product-specific tracking.',
   })
   @ApiParam({
     name: 'referralCode',
     description: 'Affiliate referral code',
     example: 'AFF-ABC123',
+  })
+  @ApiQuery({
+    name: 'productId',
+    required: false,
+    type: String,
+    description: 'Optional product ID for product-specific click tracking',
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiResponse({
     status: 200,
@@ -35,8 +51,11 @@ export class AffiliatePublicController {
     },
   })
   @ApiResponse({ status: 404, description: 'Referral code not found' })
-  async trackReferralClick(@Param('referralCode') referralCode: string) {
-    await this.affiliateService.trackReferralClick(referralCode);
+  async trackReferralClick(
+    @Param('referralCode') referralCode: string,
+    @Query('productId') productId?: string,
+  ) {
+    await this.affiliateService.trackReferralClick(referralCode, productId);
     return {
       success: true,
       message: 'Referral click tracked',
@@ -64,9 +83,13 @@ export class AffiliatePublicController {
       },
     },
   })
-  @ApiResponse({ status: 404, description: 'Referral code not found or inactive' })
+  @ApiResponse({
+    status: 404,
+    description: 'Referral code not found or inactive',
+  })
   async verifyReferralCode(@Param('referralCode') referralCode: string) {
-    const affiliate = await this.affiliateService.getAffiliateByReferralCode(referralCode);
+    const affiliate =
+      await this.affiliateService.getAffiliateByReferralCode(referralCode);
     if (!affiliate) {
       return {
         valid: false,
@@ -79,4 +102,3 @@ export class AffiliatePublicController {
     };
   }
 }
-

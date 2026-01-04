@@ -25,7 +25,58 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
-    const user = await this.usersService.create(registerDto);
+    // Check if user already exists
+    const existingUser = await this.usersService.findByEmail(registerDto.email);
+    if (existingUser) {
+      throw new BadRequestException('User with this email already exists');
+    }
+
+    // Check if email is already verified
+    const isVerified = await this.emailVerificationService.isEmailVerified(
+      registerDto.email,
+    );
+
+    // If email is not verified, verification token is required
+    if (!isVerified) {
+      if (!registerDto.verificationToken) {
+        throw new BadRequestException(
+          'Email verification is required. Please verify your email before signing up.',
+        );
+      }
+
+      // Validate verification token
+      try {
+        const { email } =
+          await this.emailVerificationService.validateVerificationToken(
+            registerDto.verificationToken,
+          );
+
+        // Ensure email matches
+        if (email !== registerDto.email) {
+          throw new BadRequestException(
+            'Email does not match verification token',
+          );
+        }
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        throw new BadRequestException(
+          'Invalid or expired verification token',
+        );
+      }
+    }
+    // If email is already verified, no token is required
+
+    // Create user account
+    const user = await this.usersService.create({
+      email: registerDto.email,
+      name: registerDto.name,
+      password: registerDto.password,
+      userType: registerDto.userType,
+      market: registerDto.market,
+    });
+
     return this.generateTokens(user);
   }
 

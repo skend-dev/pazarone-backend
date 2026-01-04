@@ -62,10 +62,10 @@ export class SellerDashboardService {
         .getRawOne(),
     ]);
 
-    const totalRevenue = parseFloat(currentRevenue?.total || '0');
+    const currentPeriodRevenue = parseFloat(currentRevenue?.total || '0');
     const lastRevenue = parseFloat(lastPeriodRevenue?.total || '0');
     const revenueChange =
-      lastRevenue > 0 ? ((totalRevenue - lastRevenue) / lastRevenue) * 100 : 0;
+      lastRevenue > 0 ? ((currentPeriodRevenue - lastRevenue) / lastRevenue) * 100 : 0;
     const ordersChange =
       lastPeriodOrders > 0
         ? ((currentOrders - lastPeriodOrders) / lastPeriodOrders) * 100
@@ -94,29 +94,71 @@ export class SellerDashboardService {
       relations: ['items', 'items.product'],
     });
 
-    let totalAffiliateCommission = 0;
+    // Separate totals by currency
+    let totalRevenueMKD = 0;
+    let totalRevenueEUR = 0;
+    let totalAffiliateCommissionMKD = 0;
+    let totalAffiliateCommissionEUR = 0;
+
     ordersWithItems.forEach((order) => {
+      const orderTotalBase = order.totalAmountBase
+        ? parseFloat(order.totalAmountBase.toString())
+        : parseFloat(order.totalAmount.toString()); // Fallback for legacy orders
+      const sellerCurrency = order.sellerBaseCurrency || 'MKD';
+
+      if (sellerCurrency === 'MKD') {
+        totalRevenueMKD += orderTotalBase;
+      } else if (sellerCurrency === 'EUR') {
+        totalRevenueEUR += orderTotalBase;
+      }
+
       order.items.forEach((item) => {
-        const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+        const itemTotalBase =
+          parseFloat(item.basePrice?.toString() || item.price.toString()) *
+          item.quantity;
         const affiliateCommissionPercent =
           item.product?.affiliateCommission || 0;
         const itemAffiliateCommission =
-          (itemTotal * affiliateCommissionPercent) / 100;
-        totalAffiliateCommission += itemAffiliateCommission;
+          (itemTotalBase * affiliateCommissionPercent) / 100;
+
+        if (sellerCurrency === 'MKD') {
+          totalAffiliateCommissionMKD += itemAffiliateCommission;
+        } else if (sellerCurrency === 'EUR') {
+          totalAffiliateCommissionEUR += itemAffiliateCommission;
+        }
       });
     });
 
     // Get seller-specific platform fee or default
     const platformFeePercent =
       await this.sellerSettingsService.getPlatformFeePercent(sellerId);
-    const platformFee = (totalRevenue * platformFeePercent) / 100;
-    const netRevenue = totalRevenue - platformFee - totalAffiliateCommission;
+    const platformFeeMKD = (totalRevenueMKD * platformFeePercent) / 100;
+    const platformFeeEUR = (totalRevenueEUR * platformFeePercent) / 100;
+    const netRevenueMKD =
+      totalRevenueMKD - platformFeeMKD - totalAffiliateCommissionMKD;
+    const netRevenueEUR =
+      totalRevenueEUR - platformFeeEUR - totalAffiliateCommissionEUR;
+
+    // Calculate total revenue for backward compatibility (sum of both currencies)
+    const totalRevenue = totalRevenueMKD + totalRevenueEUR;
 
     return {
+      // Separate by currency
+      totalRevenueMKD: Math.round(totalRevenueMKD),
+      totalRevenueEUR: Math.round(totalRevenueEUR * 100) / 100,
+      netRevenueMKD: Math.round(netRevenueMKD),
+      netRevenueEUR: Math.round(netRevenueEUR * 100) / 100,
+      platformFeeMKD: Math.round(platformFeeMKD),
+      platformFeeEUR: Math.round(platformFeeEUR * 100) / 100,
+      affiliateCommissionMKD: Math.round(totalAffiliateCommissionMKD),
+      affiliateCommissionEUR: Math.round(totalAffiliateCommissionEUR * 100) / 100,
+      // Legacy fields for backward compatibility
       totalRevenue,
-      netRevenue: Math.round(netRevenue * 100) / 100,
-      platformFee: Math.round(platformFee * 100) / 100,
-      affiliateCommission: Math.round(totalAffiliateCommission * 100) / 100,
+      netRevenue: Math.round((netRevenueMKD + netRevenueEUR) * 100) / 100,
+      platformFee: Math.round((platformFeeMKD + platformFeeEUR) * 100) / 100,
+      affiliateCommission: Math.round(
+        (totalAffiliateCommissionMKD + totalAffiliateCommissionEUR) * 100,
+      ) / 100,
       totalOrders: currentOrders,
       activeProducts,
       avgResponseTime,

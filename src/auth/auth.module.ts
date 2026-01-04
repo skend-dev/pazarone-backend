@@ -9,14 +9,16 @@ import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { EmailVerification } from './entities/email-verification.entity';
+import { PasswordReset } from './entities/password-reset.entity';
 import { EmailService } from './services/email.service';
 import { EmailVerificationService } from './services/email-verification.service';
+import { PasswordResetService } from './services/password-reset.service';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
-    TypeOrmModule.forFeature([EmailVerification]),
+    TypeOrmModule.forFeature([EmailVerification, PasswordReset]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -35,8 +37,19 @@ import { EmailVerificationService } from './services/email-verification.service'
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, EmailService, EmailVerificationService],
-  exports: [AuthService, EmailVerificationService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    EmailService,
+    EmailVerificationService,
+    PasswordResetService,
+  ],
+  exports: [
+    AuthService,
+    EmailVerificationService,
+    EmailService,
+    PasswordResetService,
+  ],
 })
 export class AuthModule {}
 

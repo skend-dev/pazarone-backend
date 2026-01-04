@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { Order, OrderStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
+import { ProductVariant } from '../products/entities/product-variant.entity';
 import { OrderQueryDto } from './dto/order-query.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -25,7 +26,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { EmailVerificationService } from '../auth/services/email-verification.service';
+import { EmailService } from '../auth/services/email.service';
 import { CustomerService } from '../customer/customer.service';
+import {
+  CurrencyService,
+  Currency,
+  Market,
+} from '../common/currency/currency.service';
 
 @Injectable()
 export class OrdersService {
@@ -36,6 +43,8 @@ export class OrdersService {
     private orderItemsRepository: Repository<OrderItem>,
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
+    @InjectRepository(ProductVariant)
+    private productVariantRepository: Repository<ProductVariant>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     @Inject(forwardRef(() => AffiliateService))
@@ -50,8 +59,11 @@ export class OrdersService {
     private notificationsGateway: NotificationsGateway,
     @Inject(forwardRef(() => EmailVerificationService))
     private emailVerificationService: EmailVerificationService,
+    @Inject(forwardRef(() => EmailService))
+    private emailService: EmailService,
     @Inject(forwardRef(() => CustomerService))
     private customerService: CustomerService,
+    private currencyService: CurrencyService,
   ) {}
 
   async findAll(
@@ -240,7 +252,8 @@ export class OrdersService {
       }
     }
 
-    // Send web notification to seller for status changes
+    // Send web notification for status changes
+    // Only notify the customer - seller initiated the update, so they don't need a notification
     try {
       let notificationType: NotificationType;
       if (updateOrderStatusDto.status === OrderStatus.CANCELLED) {
@@ -256,23 +269,9 @@ export class OrdersService {
         trackingId: updateOrderStatusDto.trackingId,
       };
 
-      // Notify seller
-      const sellerNotification =
-        await this.notificationsService.createOrderNotification(
-          sellerId,
-          notificationType,
-          updatedOrder.id,
-          updatedOrder.orderNumber,
-          notificationMetadata,
-          false, // isCustomer = false
-        );
-      await this.notificationsGateway.sendNotificationToUser(
-        sellerId,
-        sellerNotification,
-      );
-
-      // Notify customer
-      if (updatedOrder.customerId) {
+      // Only notify customer (seller is the one updating, so they don't need notification)
+      // Also check that customer is not the same as seller (edge case)
+      if (updatedOrder.customerId && updatedOrder.customerId !== sellerId) {
         const customerNotification =
           await this.notificationsService.createOrderNotification(
             updatedOrder.customerId,
@@ -291,6 +290,49 @@ export class OrdersService {
       // Log error but don't fail status update
       console.error(
         `Failed to send web notification for order ${updatedOrder.orderNumber} status change:`,
+        error,
+      );
+    }
+
+    // Send email notifications for status changes
+    try {
+      const customer = await this.usersRepository.findOne({
+        where: { id: updatedOrder.customerId },
+      });
+
+      if (customer?.email) {
+        // Send shipping notification for in_transit or delivered
+        if (
+          updateOrderStatusDto.status === OrderStatus.IN_TRANSIT ||
+          updateOrderStatusDto.status === OrderStatus.DELIVERED
+        ) {
+          await this.emailService.sendShippingNotification(
+            customer.email,
+            updatedOrder.orderNumber,
+            updateOrderStatusDto.status,
+            updateOrderStatusDto.trackingId || undefined,
+          );
+        }
+
+        // Send cancellation/return email
+        if (
+          updateOrderStatusDto.status === OrderStatus.CANCELLED ||
+          updateOrderStatusDto.status === OrderStatus.RETURNED
+        ) {
+          await this.emailService.sendOrderCancellationOrReturn(
+            customer.email,
+            updatedOrder.orderNumber,
+            updateOrderStatusDto.status === OrderStatus.CANCELLED
+              ? 'cancelled'
+              : 'returned',
+            updatedOrder.statusExplanation || undefined,
+          );
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail status update
+      console.error(
+        `Failed to send email notification for order ${updatedOrder.orderNumber} status change:`,
         error,
       );
     }
@@ -416,13 +458,46 @@ export class OrdersService {
       finalCustomerId = guestUser.id;
     }
 
-    // Validate products and calculate total
-    let totalAmount = 0;
+    // Get seller to determine base currency
+    const seller = await this.usersRepository.findOne({
+      where: { id: sellerId },
+    });
+
+    if (!seller) {
+      throw new NotFoundException(`Seller with ID ${sellerId} not found`);
+    }
+
+    // Check if seller has payment restrictions (overdue invoices)
+    const hasRestriction =
+      await this.sellerSettingsService.hasPaymentRestriction(sellerId);
+    if (hasRestriction) {
+      throw new BadRequestException(
+        'Cannot create orders. Seller has overdue invoices. Please pay outstanding invoices to continue.',
+      );
+    }
+
+    // Determine seller's base currency from market
+    const sellerMarket = (seller.market as Market) || Market.MK; // Default to MK if not set
+    const sellerBaseCurrency =
+      this.currencyService.getBaseCurrencyForMarket(sellerMarket);
+
+    // Determine buyer's currency from shipping address country
+    const buyerCurrency = this.currencyService.getBuyerCurrencyFromCountry(
+      shippingAddress.country,
+    );
+
+    // Lock exchange rate at order creation time
+    const exchangeRate = this.currencyService.getExchangeRate();
+
+    // Validate products and calculate totals
+    let totalAmount = 0; // Total in buyer currency
+    let totalAmountBase = 0; // Total in seller's base currency
     const orderItems: OrderItem[] = [];
 
     for (const itemDto of items) {
       const product = await this.productsRepository.findOne({
         where: { id: itemDto.productId },
+        relations: ['variants'],
       });
 
       if (!product) {
@@ -443,31 +518,140 @@ export class OrdersService {
         );
       }
 
-      if (product.stock < itemDto.quantity) {
+      // Handle variants
+      let variant: ProductVariant | null = null;
+      let basePrice: number;
+      let variantCombination: Record<string, string> | null = null;
+
+      if (product.hasVariants) {
+        // Product has variants - variantId is required
+        if (!itemDto.variantId) {
+          throw new BadRequestException(
+            `Product ${product.name} has variants. Please specify a variantId.`,
+          );
+        }
+
+        variant = await this.productVariantRepository.findOne({
+          where: { id: itemDto.variantId, productId: product.id },
+        });
+
+        if (!variant) {
+          throw new NotFoundException(
+            `Variant with ID ${itemDto.variantId} not found for product ${product.name}`,
+          );
+        }
+
+        if (!variant.isActive) {
+          throw new BadRequestException(
+            `Variant is not active for product ${product.name}`,
+          );
+        }
+
+        if (variant.stock < itemDto.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for variant. Available: ${variant.stock}, Requested: ${itemDto.quantity}`,
+          );
+        }
+
+        // Use variant price if set, otherwise use product base price
+        basePrice =
+          variant.price !== null && variant.price !== undefined
+            ? parseFloat(variant.price.toString())
+            : product.basePrice !== null && product.basePrice !== undefined
+              ? parseFloat(product.basePrice.toString())
+              : parseFloat(product.price.toString());
+
+        variantCombination = variant.combination;
+
+        // Update variant stock
+        variant.stock -= itemDto.quantity;
+        await this.productVariantRepository.save(variant);
+
+        // Update product total stock (sum of all variant stocks)
+        const allVariants = await this.productVariantRepository.find({
+          where: { productId: product.id },
+        });
+        const totalVariantStock = allVariants.reduce(
+          (sum, v) => sum + v.stock,
+          0,
+        );
+        product.stock = totalVariantStock;
+        if (product.stock === 0) {
+          product.status = 'out_of_stock' as any;
+        }
+        await this.productsRepository.save(product);
+      } else {
+        // Product without variants - variantId should not be provided
+        if (itemDto.variantId) {
+          throw new BadRequestException(
+            `Product ${product.name} does not have variants. Do not specify variantId.`,
+          );
+        }
+
+        if (product.stock < itemDto.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for product ${product.name}. Available: ${product.stock}, Requested: ${itemDto.quantity}`,
+          );
+        }
+
+        // Get base price - use basePrice if set, otherwise use price (for backward compatibility)
+        basePrice =
+          product.basePrice !== null && product.basePrice !== undefined
+            ? parseFloat(product.basePrice.toString())
+            : parseFloat(product.price.toString());
+
+        // Update product stock
+        product.stock -= itemDto.quantity;
+        if (product.stock === 0) {
+          product.status = 'out_of_stock' as any;
+        }
+        await this.productsRepository.save(product);
+      }
+
+      const productBaseCurrency = (product.baseCurrency ||
+        sellerBaseCurrency) as string;
+
+      // Ensure product base currency matches seller's base currency
+      if (productBaseCurrency !== sellerBaseCurrency) {
         throw new BadRequestException(
-          `Insufficient stock for product ${product.name}. Available: ${product.stock}, Requested: ${itemDto.quantity}`,
+          `Product ${product.name} base currency (${productBaseCurrency}) does not match seller's base currency (${sellerBaseCurrency})`,
         );
       }
 
-      const itemTotal = parseFloat(product.price.toString()) * itemDto.quantity;
-      totalAmount += itemTotal;
+      // Convert base price to buyer currency
+      const priceInBuyerCurrency = this.currencyService.convertAndRound(
+        basePrice,
+        productBaseCurrency as Currency,
+        buyerCurrency,
+      );
+
+      // Calculate item totals
+      const itemTotalBase = basePrice * itemDto.quantity;
+      const itemTotalBuyer = priceInBuyerCurrency * itemDto.quantity;
+
+      totalAmount += itemTotalBuyer;
+      totalAmountBase += itemTotalBase;
 
       const orderItem = this.orderItemsRepository.create({
         productId: product.id,
         productName: product.name,
         quantity: itemDto.quantity,
-        price: parseFloat(product.price.toString()),
+        price: priceInBuyerCurrency, // Price per unit in buyer currency
+        basePrice: basePrice, // Base price per unit in seller currency
+        baseCurrency: productBaseCurrency,
+        variantId: variant?.id || null,
+        variantCombination: variantCombination,
       });
 
       orderItems.push(orderItem);
-
-      // Update product stock
-      product.stock -= itemDto.quantity;
-      if (product.stock === 0) {
-        product.status = 'out_of_stock' as any;
-      }
-      await this.productsRepository.save(product);
     }
+
+    // Round final totals
+    totalAmount = this.currencyService.round(totalAmount, buyerCurrency);
+    totalAmountBase = this.currencyService.round(
+      totalAmountBase,
+      sellerBaseCurrency,
+    );
 
     // Validate shipping country - check if seller supports shipping to the requested country
     const shippingCountry = shippingAddress.country;
@@ -541,14 +725,21 @@ export class OrdersService {
     }
 
     // Create order - merge phone from customer info into shippingAddress
+    // Default payment method is 'cod' (Cash on Delivery)
+    // TODO: Add paymentMethod to CreateOrderDto if you need to support other payment methods
     const order = this.ordersRepository.create({
       orderNumber: this.generateOrderNumber(),
       sellerId,
       customerId: finalCustomerId,
       affiliateId: finalAffiliateId,
       referralCode: finalReferralCode,
-      totalAmount,
+      totalAmount, // Total in buyer currency
+      totalAmountBase, // Total in seller's base currency
+      buyerCurrency: buyerCurrency as string,
+      sellerBaseCurrency: sellerBaseCurrency as string,
+      exchangeRate, // Locked exchange rate at order time
       status: OrderStatus.PENDING,
+      paymentMethod: 'cod', // Default to COD (Cash on Delivery)
       trackingId: trackingId || null,
       shippingAddress: {
         ...shippingAddress,
@@ -632,20 +823,22 @@ export class OrdersService {
         itemCount: savedOrder.items.length,
       };
 
-      // Notify seller
-      const sellerNotification =
-        await this.notificationsService.createOrderNotification(
+      // Notify seller (only if seller is not the same as customer)
+      if (sellerId !== finalCustomerId) {
+        const sellerNotification =
+          await this.notificationsService.createOrderNotification(
+            sellerId,
+            NotificationType.ORDER_CREATED,
+            savedOrder.id,
+            savedOrder.orderNumber,
+            notificationMetadata,
+            false, // isCustomer = false
+          );
+        await this.notificationsGateway.sendNotificationToUser(
           sellerId,
-          NotificationType.ORDER_CREATED,
-          savedOrder.id,
-          savedOrder.orderNumber,
-          notificationMetadata,
-          false, // isCustomer = false
+          sellerNotification,
         );
-      await this.notificationsGateway.sendNotificationToUser(
-        sellerId,
-        sellerNotification,
-      );
+      }
 
       // Notify customer
       if (finalCustomerId) {
@@ -671,28 +864,73 @@ export class OrdersService {
       );
     }
 
+    // Send email notifications
+    try {
+      // Get customer email (from order or customer entity)
+      const customerEmail =
+        customer.email || savedOrder.customer?.email || null;
+
+      // Send order confirmation email to customer
+      if (customerEmail) {
+        const orderItems = savedOrder.items.map((item) => ({
+          productName: item.productName,
+          quantity: item.quantity,
+          price: parseFloat(item.price.toString()),
+        }));
+
+        await this.emailService.sendOrderConfirmation(
+          customerEmail,
+          savedOrder.orderNumber,
+          parseFloat(savedOrder.totalAmount.toString()),
+          orderItems,
+        );
+      }
+
+      // Send seller notification email
+      const seller = await this.usersRepository.findOne({
+        where: { id: sellerId },
+      });
+      if (seller?.email) {
+        await this.emailService.sendSellerNotification(
+          seller.email,
+          'new_order',
+          {
+            orderNumber: savedOrder.orderNumber,
+            totalAmount: parseFloat(savedOrder.totalAmount.toString()),
+          },
+        );
+      }
+    } catch (error) {
+      // Log error but don't fail order creation
+      console.error(
+        `[Order ${savedOrder.orderNumber}] Failed to send email notifications:`,
+        error,
+      );
+    }
+
     // Save shipping address for authenticated customers (not guests)
     // Only save if customer is authenticated (providedCustomerId or customerId was set)
     if (providedCustomerId || customerId) {
       try {
         const customerIdToUse = providedCustomerId || customerId;
         if (customerIdToUse) {
-          // Check if customer already has a default address
-          const existingDefaultAddress =
-            await this.customerService.getDefaultAddress(customerIdToUse);
+          // Check if customer has any addresses
+          const existingAddresses =
+            await this.customerService.getAddresses(customerIdToUse);
 
-          // If no default address exists, save the shipping address as default
-          if (!existingDefaultAddress) {
-            await this.customerService.createAddress(customerIdToUse, {
-              street: shippingAddress.street,
-              city: shippingAddress.city,
-              state: shippingAddress.state,
-              zip: shippingAddress.zip,
-              country: shippingAddress.country,
-              phone: shippingAddress.phone || customer.phone || '',
-              isDefault: true,
-            });
-          }
+          // If no addresses exist, save the shipping address as default (first address)
+          // If addresses exist, save as non-default (or allow user preference)
+          const isFirstAddress = existingAddresses.length === 0;
+
+          await this.customerService.createAddress(customerIdToUse, {
+            street: shippingAddress.street,
+            city: shippingAddress.city,
+            state: shippingAddress.state,
+            zip: shippingAddress.zip,
+            country: shippingAddress.country,
+            phone: shippingAddress.phone || customer.phone || '',
+            isDefault: isFirstAddress, // Set as default only if it's the first address
+          });
         }
       } catch (error) {
         // Log error but don't fail order creation
@@ -1060,7 +1298,36 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order');
     }
 
-    return this.formatOrderForCustomer(order);
+    // Get seller settings for additional seller information
+    let sellerInfo: any = null;
+    if (order.seller) {
+      sellerInfo = {
+        id: order.seller.id,
+        name: order.seller.name,
+        email: order.seller.email,
+        phone: order.seller.phone || null,
+      };
+
+      try {
+        const sellerSettings = await this.sellerSettingsService.getSettings(
+          order.sellerId,
+        );
+        sellerInfo.storeName = sellerSettings.store?.name || null;
+        sellerInfo.storeDescription = sellerSettings.store?.description || null;
+        sellerInfo.storeLogo = sellerSettings.store?.logo || null;
+        sellerInfo.phone = sellerSettings.account?.phone || sellerInfo.phone;
+      } catch (error) {
+        // Log but continue without additional seller info
+        console.warn(
+          `Failed to get seller settings for order ${order.orderNumber}:`,
+          error,
+        );
+      }
+    }
+
+    const formattedOrder = this.formatOrderForCustomer(order);
+    formattedOrder.seller = sellerInfo;
+    return formattedOrder;
   }
 
   async findOnePublic(id: string): Promise<any> {
@@ -1143,5 +1410,171 @@ export class OrdersService {
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
     };
+  }
+
+  /**
+   * Generate invoice PDF for customer order
+   */
+  async generateInvoice(
+    orderId: string,
+    customerId: string,
+    format: string = 'pdf',
+  ): Promise<{ orderNumber: string; pdfBuffer: Buffer }> {
+    // Get order with all relations
+    const order = await this.ordersRepository.findOne({
+      where: { id: orderId },
+      relations: ['seller', 'items'],
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.customerId !== customerId) {
+      throw new ForbiddenException(
+        'You do not have permission to access this order',
+      );
+    }
+
+    // Get seller settings for store name
+    let sellerName = order.seller?.name || 'Seller';
+    let storeName: string | null = null;
+
+    try {
+      const sellerSettings = await this.sellerSettingsService.getSettings(
+        order.sellerId,
+      );
+      storeName = sellerSettings.store?.name || null;
+    } catch (error) {
+      // Log but continue without store name
+      console.warn(
+        `Failed to get seller settings for invoice ${order.orderNumber}:`,
+        error,
+      );
+    }
+
+    if (format === 'pdf') {
+      // Generate PDF using pdfkit
+      const PDFDocument = require('pdfkit');
+
+      return new Promise((resolve, reject) => {
+        try {
+          const doc = new PDFDocument({ margin: 50 });
+          const buffers: Buffer[] = [];
+
+          // Collect PDF data chunks
+          doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+          doc.on('end', () => {
+            const pdfBuffer = Buffer.concat(buffers);
+            resolve({
+              orderNumber: order.orderNumber,
+              pdfBuffer,
+            });
+          });
+          doc.on('error', (error: Error) => {
+            reject(error);
+          });
+
+          // Header
+          doc.fontSize(20).text('INVOICE', { align: 'center' });
+          doc.moveDown();
+          doc
+            .fontSize(12)
+            .text(`Order #${order.orderNumber}`, { align: 'center' });
+          doc.text(`Date: ${order.createdAt.toLocaleDateString()}`, {
+            align: 'center',
+          });
+          doc.moveDown();
+
+          // Order Status
+          doc.fontSize(10).text(`Status: ${order.status.toUpperCase()}`, {
+            align: 'left',
+          });
+          doc.moveDown();
+
+          // Seller Information (From:)
+          doc.fontSize(12).text('From:', { underline: true });
+          doc.fontSize(10).text(storeName || sellerName);
+          if (order.seller?.email) {
+            doc.text(order.seller.email);
+          }
+          doc.moveDown();
+
+          // Shipping Address (Ship To:)
+          doc.fontSize(12).text('Ship To:', { underline: true });
+          doc.fontSize(10).text(order.shippingAddress.street);
+          doc.text(
+            `${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.zip}`,
+          );
+          doc.text(order.shippingAddress.country);
+          if (order.shippingAddress.phone) {
+            doc.text(`Phone: ${order.shippingAddress.phone}`);
+          }
+          doc.moveDown(2);
+
+          // Order Items Table
+          doc.fontSize(12).text('Items:', { underline: true });
+          doc.moveDown(0.5);
+
+          // Table header
+          doc.fontSize(10);
+          const tableY = doc.y;
+          doc.text('Item', 50, tableY);
+          doc.text('Quantity', 300, tableY);
+          doc.text('Price', 400, tableY);
+          doc.text('Total', 500, tableY);
+          doc.moveDown(0.5);
+          doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+          doc.moveDown(0.5);
+
+          // Table rows
+          order.items.forEach((item) => {
+            const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+            const rowY = doc.y;
+            doc.text(item.productName, 50, rowY, { width: 240 });
+            doc.text(item.quantity.toString(), 300, rowY);
+            doc.text(
+              `${parseFloat(item.price.toString()).toFixed(2)} MKD`,
+              400,
+              rowY,
+            );
+            doc.text(`${itemTotal.toFixed(2)} MKD`, 500, rowY);
+            doc.moveDown(0.5);
+          });
+
+          doc.moveDown();
+          doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+          doc.moveDown();
+
+          // Total
+          doc
+            .fontSize(12)
+            .text(
+              `Total: ${parseFloat(order.totalAmount.toString()).toFixed(2)} MKD`,
+              { align: 'right' },
+            );
+
+          // Tracking ID if available
+          if (order.trackingId) {
+            doc.moveDown();
+            doc.fontSize(10).text(`Tracking ID: ${order.trackingId}`);
+          }
+
+          // Footer
+          doc.moveDown(3);
+          doc.fontSize(10).text('Thank you for your purchase!', {
+            align: 'center',
+          });
+          doc.text('Generated by PazarOne Marketplace', { align: 'center' });
+
+          // Finalize PDF
+          doc.end();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    } else {
+      throw new BadRequestException(`Unsupported format: ${format}`);
+    }
   }
 }

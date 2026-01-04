@@ -2,30 +2,54 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In } from 'typeorm';
 import { User, UserType } from '../users/entities/user.entity';
 import { AffiliateReferral } from './entities/affiliate-referral.entity';
-import { AffiliateCommission, CommissionStatus } from './entities/affiliate-commission.entity';
-import { AffiliateWithdrawal, WithdrawalStatus } from './entities/affiliate-withdrawal.entity';
+import { AffiliateReferralClick } from './entities/affiliate-referral-click.entity';
+import {
+  AffiliateCommission,
+  CommissionStatus,
+} from './entities/affiliate-commission.entity';
+import {
+  AffiliateWithdrawal,
+  WithdrawalStatus,
+} from './entities/affiliate-withdrawal.entity';
+import { AffiliatePaymentMethod } from './entities/affiliate-payment-method.entity';
+import { PaymentMethodOtp } from './entities/payment-method-otp.entity';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
+import { VerifyPaymentMethodOtpDto } from './dto/verify-payment-method-otp.dto';
+import { EmailService } from '../auth/services/email.service';
+import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
 export class AffiliateService {
+  private readonly logger = new Logger(AffiliateService.name);
+
   constructor(
     @InjectRepository(AffiliateReferral)
     private affiliateReferralRepository: Repository<AffiliateReferral>,
+    @InjectRepository(AffiliateReferralClick)
+    private affiliateReferralClickRepository: Repository<AffiliateReferralClick>,
     @InjectRepository(AffiliateCommission)
     private affiliateCommissionRepository: Repository<AffiliateCommission>,
     @InjectRepository(AffiliateWithdrawal)
     private affiliateWithdrawalRepository: Repository<AffiliateWithdrawal>,
+    @InjectRepository(AffiliatePaymentMethod)
+    private affiliatePaymentMethodRepository: Repository<AffiliatePaymentMethod>,
+    @InjectRepository(PaymentMethodOtp)
+    private paymentMethodOtpRepository: Repository<PaymentMethodOtp>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     @InjectRepository(Order)
     private ordersRepository: Repository<Order>,
     private platformSettingsService: PlatformSettingsService,
+    @Inject(forwardRef(() => EmailService))
+    private emailService: EmailService,
   ) {}
 
   // Generate unique referral code
@@ -101,15 +125,79 @@ export class AffiliateService {
   }
 
   // Track referral click (increment click count)
-  async trackReferralClick(referralCode: string): Promise<void> {
+  async trackReferralClick(
+    referralCode: string,
+    productId?: string | null,
+  ): Promise<void> {
     const referral = await this.affiliateReferralRepository.findOne({
       where: { referralCode, isActive: true },
     });
 
-    if (referral) {
-      referral.totalClicks += 1;
-      await this.affiliateReferralRepository.save(referral);
+    if (!referral) {
+      this.logger.warn(`Referral code not found or inactive: ${referralCode}`);
+      return;
     }
+
+    // Validate productId format if provided (should be UUID)
+    if (productId) {
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(productId)) {
+        this.logger.warn(
+          `Invalid productId format: ${productId} for referral code: ${referralCode}`,
+        );
+        // Continue with null productId instead of failing
+        productId = null;
+      }
+    }
+
+    // Increment total clicks in referral record
+    referral.totalClicks += 1;
+    await this.affiliateReferralRepository.save(referral);
+
+    // Store individual click record with product information
+    const click = this.affiliateReferralClickRepository.create({
+      affiliateId: referral.affiliateId,
+      referralCode: referralCode,
+      productId: productId || null,
+    });
+
+    await this.affiliateReferralClickRepository.save(click);
+
+    // Log for debugging
+    if (productId) {
+      this.logger.log(
+        `✅ Tracked product-specific click: referralCode=${referralCode}, productId=${productId}, affiliateId=${referral.affiliateId}`,
+      );
+    } else {
+      this.logger.log(
+        `⚠️ Tracked general click (no productId): referralCode=${referralCode}, affiliateId=${referral.affiliateId}`,
+      );
+    }
+  }
+
+  // Get product-specific clicks for an affiliate
+  async getProductClicks(affiliateId: string): Promise<
+    Array<{
+      productId: string;
+      clicks: number;
+    }>
+  > {
+    const productClicks = await this.affiliateReferralClickRepository
+      .createQueryBuilder('click')
+      .select('click.productId', 'productId')
+      .addSelect('COUNT(*)', 'clicks')
+      .where('click.affiliateId = :affiliateId', { affiliateId })
+      .andWhere('click.productId IS NOT NULL')
+      .groupBy('click.productId')
+      .having('COUNT(*) > 0')
+      .orderBy('clicks', 'DESC')
+      .getRawMany();
+
+    return productClicks.map((item) => ({
+      productId: item.productId,
+      clicks: parseInt(item.clicks, 10),
+    }));
   }
 
   // Create commission records for an order
@@ -191,6 +279,21 @@ export class AffiliateService {
     return await this.platformSettingsService.getMinimumWithdrawalThreshold();
   }
 
+  // Get total amount of pending/approved withdrawals
+  async getPendingWithdrawalsTotal(affiliateId: string): Promise<number> {
+    const pendingWithdrawals = await this.affiliateWithdrawalRepository.find({
+      where: {
+        affiliateId,
+        status: In([WithdrawalStatus.PENDING, WithdrawalStatus.APPROVED]),
+      },
+    });
+
+    return pendingWithdrawals.reduce(
+      (sum, w) => sum + parseFloat(w.amount.toString()),
+      0,
+    );
+  }
+
   // Get available balance (approved earnings minus pending/approved withdrawals)
   async getAvailableBalance(affiliateId: string): Promise<number> {
     // Get total approved earnings
@@ -206,17 +309,8 @@ export class AffiliateService {
     const approvedEarnings = parseFloat(approvedEarningsResult?.total || '0');
 
     // Get total pending/approved withdrawals
-    const pendingWithdrawals = await this.affiliateWithdrawalRepository.find({
-      where: {
-        affiliateId,
-        status: In([WithdrawalStatus.PENDING, WithdrawalStatus.APPROVED]),
-      },
-    });
-
-    const totalPendingWithdrawals = pendingWithdrawals.reduce(
-      (sum, w) => sum + parseFloat(w.amount.toString()),
-      0,
-    );
+    const totalPendingWithdrawals =
+      await this.getPendingWithdrawalsTotal(affiliateId);
 
     // Available balance = approved earnings - pending/approved withdrawals
     return Math.max(0, approvedEarnings - totalPendingWithdrawals);
@@ -239,6 +333,9 @@ export class AffiliateService {
       paidCommissions,
       totalEarnings,
       availableBalance,
+      pendingWithdrawalsTotal,
+      hasWithdrawalThisMonth,
+      nextWithdrawalDate,
     ] = await Promise.all([
       this.affiliateCommissionRepository.find({
         where: { affiliateId, status: CommissionStatus.PENDING },
@@ -258,6 +355,9 @@ export class AffiliateService {
         })
         .getRawOne(),
       this.getAvailableBalance(affiliateId),
+      this.getPendingWithdrawalsTotal(affiliateId),
+      this.hasWithdrawalThisMonth(affiliateId),
+      this.getNextWithdrawalDate(affiliateId),
     ]);
 
     const pendingAmount = pendingCommissions.reduce(
@@ -275,6 +375,10 @@ export class AffiliateService {
 
     const minimumWithdrawal = await this.getMinimumWithdrawalThreshold();
 
+    // canWithdraw: must meet minimum threshold AND not have withdrawal this month
+    const canWithdraw =
+      availableBalance >= minimumWithdrawal && !hasWithdrawalThisMonth;
+
     return {
       referralCode: referral.referralCode,
       referralLink: this.getReferralLink(referral.referralCode),
@@ -283,10 +387,14 @@ export class AffiliateService {
       pendingEarnings: Math.round(pendingAmount * 100) / 100,
       approvedEarnings: Math.round(approvedAmount * 100) / 100,
       paidEarnings: Math.round(paidAmount * 100) / 100,
-      totalEarnings: Math.round(parseFloat(totalEarnings?.total || '0') * 100) / 100,
+      totalEarnings:
+        Math.round(parseFloat(totalEarnings?.total || '0') * 100) / 100,
       availableBalance: Math.round(availableBalance * 100) / 100,
+      pendingWithdrawals: Math.round(pendingWithdrawalsTotal * 100) / 100, // Total amount in pending/approved withdrawals
       minimumWithdrawal: minimumWithdrawal,
-      canWithdraw: availableBalance >= minimumWithdrawal,
+      canWithdraw: canWithdraw,
+      hasWithdrawalThisMonth: hasWithdrawalThisMonth, // NEW: Whether a withdrawal was already requested this month
+      nextWithdrawalDate: nextWithdrawalDate, // NEW: Date when next withdrawal can be requested (null if can request now)
       pendingCount: pendingCommissions.length,
       approvedCount: approvedCommissions.length,
       paidCount: paidCommissions.length,
@@ -376,6 +484,50 @@ export class AffiliateService {
     }));
   }
 
+  // Check if affiliate has already made a withdrawal request in the current month
+  async hasWithdrawalThisMonth(affiliateId: string): Promise<boolean> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    // Count any withdrawal status (PENDING, APPROVED, PAID, REJECTED)
+    // Once a request is made, even if rejected, they can't request again this month
+    const count = await this.affiliateWithdrawalRepository
+      .createQueryBuilder('withdrawal')
+      .where('withdrawal.affiliateId = :affiliateId', { affiliateId })
+      .andWhere('withdrawal.createdAt >= :startOfMonth', {
+        startOfMonth: startOfMonth.toISOString(),
+      })
+      .andWhere('withdrawal.createdAt <= :endOfMonth', {
+        endOfMonth: endOfMonth.toISOString(),
+      })
+      .getCount();
+
+    return count > 0;
+  }
+
+  // Get the date when the next withdrawal can be requested (first day of next month)
+  async getNextWithdrawalDate(affiliateId: string): Promise<Date | null> {
+    const hasWithdrawal = await this.hasWithdrawalThisMonth(affiliateId);
+
+    if (!hasWithdrawal) {
+      return null; // Can request now
+    }
+
+    // Return first day of next month
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  }
+
   // Request withdrawal
   async requestWithdrawal(
     affiliateId: string,
@@ -393,6 +545,23 @@ export class AffiliateService {
     if (amount < minimumWithdrawal) {
       throw new BadRequestException(
         `Minimum withdrawal amount is ${minimumWithdrawal} den. You requested ${amount} den.`,
+      );
+    }
+
+    // Check monthly limit - only one withdrawal per month
+    const hasWithdrawalThisMonth =
+      await this.hasWithdrawalThisMonth(affiliateId);
+    if (hasWithdrawalThisMonth) {
+      const nextWithdrawalDate = await this.getNextWithdrawalDate(affiliateId);
+      const nextDateStr = nextWithdrawalDate
+        ? nextWithdrawalDate.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })
+        : 'next month';
+      throw new BadRequestException(
+        `You have already requested a withdrawal this month. You can request your next withdrawal on ${nextDateStr}.`,
       );
     }
 
@@ -417,14 +586,22 @@ export class AffiliateService {
   }
 
   // Get withdrawal history
+  // IMPORTANT: This method only returns withdrawals for the specified affiliateId
+  // Controllers must ensure they pass the authenticated user's ID to prevent unauthorized access
   async getWithdrawals(
     affiliateId: string,
     page: number = 1,
     limit: number = 20,
     status?: WithdrawalStatus,
   ) {
+    // Validate affiliateId is provided
+    if (!affiliateId || typeof affiliateId !== 'string') {
+      throw new BadRequestException('Invalid affiliate ID');
+    }
+
     const skip = (page - 1) * limit;
 
+    // Explicitly filter by affiliateId - this ensures users can only see their own withdrawals
     const queryBuilder = this.affiliateWithdrawalRepository
       .createQueryBuilder('withdrawal')
       .where('withdrawal.affiliateId = :affiliateId', { affiliateId })
@@ -438,8 +615,22 @@ export class AffiliateService {
 
     const [withdrawals, total] = await queryBuilder.getManyAndCount();
 
+    // Safety check: ensure all returned withdrawals belong to the requested affiliate
+    // This should never filter anything since the query already filters by affiliateId,
+    // but it provides an extra layer of security
+    const filteredWithdrawals = withdrawals.filter(
+      (w) => w.affiliateId === affiliateId,
+    );
+
+    // If any withdrawals were filtered out (should never happen), log a warning
+    if (filteredWithdrawals.length !== withdrawals.length) {
+      this.logger.error(
+        `SECURITY ALERT: Found ${withdrawals.length - filteredWithdrawals.length} withdrawals that don't belong to affiliate ${affiliateId}. This indicates a potential security issue.`,
+      );
+    }
+
     return {
-      withdrawals: withdrawals.map((w) => ({
+      withdrawals: filteredWithdrawals.map((w) => ({
         id: w.id,
         amount: parseFloat(w.amount.toString()),
         status: w.status,
@@ -451,10 +642,224 @@ export class AffiliateService {
       pagination: {
         page,
         limit,
-        total,
+        total, // Total count across all pages for this affiliate (from query)
         totalPages: Math.ceil(total / limit),
       },
     };
   }
-}
 
+  // Get payment method for affiliate
+  async getPaymentMethod(affiliateId: string) {
+    const paymentMethod = await this.affiliatePaymentMethodRepository.findOne({
+      where: { affiliateId },
+    });
+
+    if (!paymentMethod) {
+      return null;
+    }
+
+    return {
+      id: paymentMethod.id,
+      bankName: paymentMethod.bankName,
+      accountNumber: this.maskAccountNumber(paymentMethod.accountNumber),
+      accountHolderName: paymentMethod.accountHolderName,
+      iban: paymentMethod.iban,
+      swiftCode: paymentMethod.swiftCode,
+      bankAddress: paymentMethod.bankAddress,
+      verified: paymentMethod.verified,
+      verificationNotes: paymentMethod.verificationNotes,
+      createdAt: paymentMethod.createdAt,
+      updatedAt: paymentMethod.updatedAt,
+    };
+  }
+
+  // Update or create payment method
+  async updatePaymentMethod(
+    affiliateId: string,
+    updatePaymentMethodDto: UpdatePaymentMethodDto,
+  ) {
+    let paymentMethod = await this.affiliatePaymentMethodRepository.findOne({
+      where: { affiliateId },
+    });
+
+    if (paymentMethod) {
+      // Update existing payment method
+      // Reset verification when payment method is updated
+      paymentMethod.bankName = updatePaymentMethodDto.bankName;
+      paymentMethod.accountNumber = updatePaymentMethodDto.accountNumber;
+      paymentMethod.accountHolderName =
+        updatePaymentMethodDto.accountHolderName;
+      paymentMethod.iban = updatePaymentMethodDto.iban || null;
+      paymentMethod.swiftCode = updatePaymentMethodDto.swiftCode || null;
+      paymentMethod.bankAddress = updatePaymentMethodDto.bankAddress || null;
+      paymentMethod.verified = false; // Reset verification when updated
+      paymentMethod.verificationNotes = null;
+    } else {
+      // Create new payment method
+      paymentMethod = this.affiliatePaymentMethodRepository.create({
+        affiliateId,
+        bankName: updatePaymentMethodDto.bankName,
+        accountNumber: updatePaymentMethodDto.accountNumber,
+        accountHolderName: updatePaymentMethodDto.accountHolderName,
+        iban: updatePaymentMethodDto.iban || null,
+        swiftCode: updatePaymentMethodDto.swiftCode || null,
+        bankAddress: updatePaymentMethodDto.bankAddress || null,
+        verified: false,
+      });
+    }
+
+    const saved =
+      await this.affiliatePaymentMethodRepository.save(paymentMethod);
+
+    return {
+      id: saved.id,
+      bankName: saved.bankName,
+      accountNumber: this.maskAccountNumber(saved.accountNumber),
+      accountHolderName: saved.accountHolderName,
+      iban: saved.iban,
+      swiftCode: saved.swiftCode,
+      bankAddress: saved.bankAddress,
+      verified: saved.verified,
+      verificationNotes: saved.verificationNotes,
+      createdAt: saved.createdAt,
+      updatedAt: saved.updatedAt,
+    };
+  }
+
+  // Helper method to mask account number for display
+  private maskAccountNumber(accountNumber: string): string {
+    if (!accountNumber || accountNumber.length <= 4) {
+      return accountNumber;
+    }
+    const last4 = accountNumber.slice(-4);
+    const masked = '*'.repeat(accountNumber.length - 4);
+    return `${masked}${last4}`;
+  }
+
+  /**
+   * Generate a 6-digit OTP code
+   */
+  private generateOtpCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  /**
+   * Send OTP code to affiliate's email for payment method verification
+   */
+  async sendPaymentMethodOtp(affiliateId: string): Promise<void> {
+    // Get affiliate user
+    const user = await this.usersRepository.findOne({
+      where: { id: affiliateId },
+    });
+
+    if (!user || !user.email) {
+      throw new NotFoundException('Affiliate user or email not found');
+    }
+
+    // Check if payment method exists
+    const paymentMethod = await this.affiliatePaymentMethodRepository.findOne({
+      where: { affiliateId },
+    });
+
+    if (!paymentMethod) {
+      throw new BadRequestException(
+        'Payment method not found. Please add a payment method first.',
+      );
+    }
+
+    // Invalidate any existing unverified OTPs for this affiliate
+    await this.paymentMethodOtpRepository.update(
+      {
+        affiliateId,
+        verified: false,
+      },
+      {
+        verified: true, // Mark as used (invalidated)
+      },
+    );
+
+    // Generate new OTP code
+    const code = this.generateOtpCode();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minutes expiry
+
+    // Create OTP record
+    const otp = this.paymentMethodOtpRepository.create({
+      affiliateId,
+      code,
+      expiresAt,
+      verified: false,
+    });
+
+    await this.paymentMethodOtpRepository.save(otp);
+
+    // Send email with OTP
+    try {
+      await this.emailService.sendPaymentMethodVerificationCode(
+        user.email,
+        code,
+      );
+      this.logger.log(
+        `Payment method OTP sent to ${user.email} for affiliate ${affiliateId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send payment method OTP to ${user.email}:`,
+        error,
+      );
+      throw new BadRequestException('Failed to send OTP email');
+    }
+  }
+
+  /**
+   * Verify OTP code to confirm user identity
+   * Note: This only confirms the user owns the email, it does NOT verify the payment method.
+   * Payment method verification is done separately by admin.
+   */
+  async verifyPaymentMethodOtp(
+    affiliateId: string,
+    verifyOtpDto: VerifyPaymentMethodOtpDto,
+  ): Promise<{ success: boolean; message: string }> {
+    // Find the most recent unverified OTP for this affiliate
+    const otp = await this.paymentMethodOtpRepository.findOne({
+      where: {
+        affiliateId,
+        verified: false,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    if (!otp) {
+      throw new BadRequestException(
+        'No OTP code found. Please request a new OTP code.',
+      );
+    }
+
+    // Check if OTP is expired
+    if (new Date() > otp.expiresAt) {
+      throw new BadRequestException(
+        'OTP code has expired. Please request a new one.',
+      );
+    }
+
+    // Check if code matches
+    if (otp.code !== verifyOtpDto.code) {
+      throw new BadRequestException('Invalid OTP code.');
+    }
+
+    // Mark OTP as verified (user identity confirmed)
+    otp.verified = true;
+    await this.paymentMethodOtpRepository.save(otp);
+
+    // Note: Payment method verification is NOT changed here
+    // It remains unverified until admin manually verifies it
+
+    return {
+      success: true,
+      message:
+        'User identity confirmed successfully. Payment method is pending admin verification.',
+    };
+  }
+}

@@ -15,33 +15,52 @@ import { ForbiddenException } from '@nestjs/common';
 
 @ApiTags('affiliate-analytics')
 @ApiBearerAuth('JWT-auth')
-@Controller('affiliate/analytics')
+@Controller('affiliate')
 @UseGuards(JwtAuthGuard)
 export class AffiliateAnalyticsController {
   constructor(private readonly affiliateService: AffiliateService) {}
 
   private validateAffiliate(user: User) {
     if (user.userType !== UserType.AFFILIATE) {
-      throw new ForbiddenException('This endpoint is only available for affiliate users');
+      throw new ForbiddenException(
+        'This endpoint is only available for affiliate users',
+      );
     }
   }
 
-  @Get('commissions')
+  @Get('analytics/commissions')
   @ApiOperation({
     summary: 'Get affiliate commissions',
-    description: 'Returns paginated list of commissions with order and product details',
+    description:
+      'Returns paginated list of commissions with order and product details',
   })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 20)',
+  })
   @ApiQuery({
     name: 'status',
     required: false,
     enum: CommissionStatus,
     description: 'Filter by commission status',
   })
-  @ApiResponse({ status: 200, description: 'Commissions retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Commissions retrieved successfully',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - user is not an affiliate' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
   getCommissions(
     @CurrentUser() user: User,
     @Query('page') page?: number,
@@ -57,16 +76,29 @@ export class AffiliateAnalyticsController {
     );
   }
 
-  @Get('earnings')
+  @Get('analytics/earnings')
   @ApiOperation({
     summary: 'Get earnings by period',
     description: 'Returns earnings breakdown by date for approved commissions',
   })
-  @ApiQuery({ name: 'startDate', required: true, type: String, description: 'Start date (ISO 8601)' })
-  @ApiQuery({ name: 'endDate', required: true, type: String, description: 'End date (ISO 8601)' })
+  @ApiQuery({
+    name: 'startDate',
+    required: true,
+    type: String,
+    description: 'Start date (ISO 8601)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: true,
+    type: String,
+    description: 'End date (ISO 8601)',
+  })
   @ApiResponse({ status: 200, description: 'Earnings retrieved successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - user is not an affiliate' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
   getEarnings(
     @CurrentUser() user: User,
     @Query('startDate') startDate: string,
@@ -79,5 +111,46 @@ export class AffiliateAnalyticsController {
       new Date(endDate),
     );
   }
-}
 
+  @Get('products/clicks')
+  @ApiOperation({
+    summary: 'Get product-specific clicks',
+    description:
+      'Returns aggregated click counts per product for the authenticated affiliate. Only returns products with clicks > 0.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product clicks retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        productClicks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              productId: {
+                type: 'string',
+                example: '123e4567-e89b-12d3-a456-426614174000',
+              },
+              clicks: { type: 'number', example: 25 },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - user is not an affiliate',
+  })
+  getProductClicks(@CurrentUser() user: User) {
+    this.validateAffiliate(user);
+    return this.affiliateService
+      .getProductClicks(user.id)
+      .then((productClicks) => ({
+        productClicks,
+      }));
+  }
+}

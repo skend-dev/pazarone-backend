@@ -9,7 +9,9 @@ import {
   UseGuards,
   Query,
   NotFoundException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -59,6 +61,7 @@ export class CustomerController {
             id: { type: 'string' },
             email: { type: 'string' },
             name: { type: 'string' },
+            phone: { type: 'string', nullable: true },
             userType: { type: 'string', enum: ['customer'] },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -79,6 +82,7 @@ export class CustomerController {
         id: profile.id,
         email: profile.email,
         name: profile.name,
+        phone: profile.phone ?? null, // Explicitly include phone, even if null
         userType: profile.userType,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
@@ -103,6 +107,7 @@ export class CustomerController {
             id: { type: 'string' },
             email: { type: 'string' },
             name: { type: 'string' },
+            phone: { type: 'string', nullable: true },
             userType: { type: 'string', enum: ['customer'] },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -129,6 +134,7 @@ export class CustomerController {
         id: updatedUser.id,
         email: updatedUser.email,
         name: updatedUser.name,
+        phone: updatedUser.phone,
         userType: updatedUser.userType,
         createdAt: updatedUser.createdAt,
         updatedAt: updatedUser.updatedAt,
@@ -165,8 +171,9 @@ export class CustomerController {
       user.id,
       changePasswordDto.currentPassword,
       changePasswordDto.newPassword,
+      changePasswordDto.confirmPassword,
     );
-    return { message: 'Password updated successfully' };
+    return { success: true, message: 'Password updated successfully' };
   }
 
   @Get('addresses')
@@ -178,25 +185,20 @@ export class CustomerController {
     status: 200,
     description: 'Addresses retrieved successfully',
     schema: {
-      type: 'object',
-      properties: {
-        addresses: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' },
-              street: { type: 'string' },
-              city: { type: 'string' },
-              state: { type: 'string' },
-              zip: { type: 'string' },
-              country: { type: 'string' },
-              phone: { type: 'string' },
-              isDefault: { type: 'boolean' },
-              createdAt: { type: 'string', format: 'date-time' },
-              updatedAt: { type: 'string', format: 'date-time' },
-            },
-          },
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          street: { type: 'string' },
+          city: { type: 'string' },
+          state: { type: 'string' },
+          zip: { type: 'string' },
+          country: { type: 'string' },
+          phone: { type: 'string' },
+          isDefault: { type: 'boolean' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
         },
       },
     },
@@ -208,7 +210,7 @@ export class CustomerController {
   })
   async getAddresses(@CurrentUser() user: User) {
     const addresses = await this.customerService.getAddresses(user.id);
-    return { addresses };
+    return addresses; // Return array directly, not wrapped in object
   }
 
   @Get('addresses/default')
@@ -674,5 +676,52 @@ export class CustomerController {
       'customer',
       returnOrderDto.explanation,
     );
+  }
+
+  @Get('orders/:id/invoice')
+  @ApiOperation({
+    summary: 'Download order invoice',
+    description: 'Download invoice PDF for a specific order',
+  })
+  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiQuery({
+    name: 'format',
+    required: false,
+    enum: ['pdf'],
+    description: 'Invoice format (default: pdf)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Invoice PDF generated successfully',
+    content: {
+      'application/pdf': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not your order' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async downloadInvoice(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Query('format') format: string = 'pdf',
+    @Res() res: Response,
+  ) {
+    const invoice = await this.ordersService.generateInvoice(
+      id,
+      user.id,
+      format,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="invoice-${invoice.orderNumber}.pdf"`,
+    );
+    res.send(invoice.pdfBuffer);
   }
 }

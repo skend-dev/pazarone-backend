@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Order } from './order.entity';
 import { Product } from '../../products/entities/product.entity';
+import { ProductVariant } from '../../products/entities/product-variant.entity';
 
 @Entity('order_items')
 @Index(['orderId'])
@@ -37,6 +38,22 @@ export class OrderItem {
   quantity: number;
 
   @Column('decimal', { precision: 10, scale: 2 })
-  price: number;
+  price: number; // Price in buyer currency (charged price)
+
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  basePrice: number | null; // Base price in seller's currency (for order consistency)
+
+  @Column({ type: 'varchar', length: 3, nullable: true, default: 'MKD' })
+  baseCurrency: string | null; // Base currency ('MKD' or 'EUR')
+
+  @Column('uuid', { nullable: true })
+  variantId: string | null; // Selected product variant ID
+
+  @ManyToOne(() => ProductVariant, { nullable: true })
+  @JoinColumn({ name: 'variantId' })
+  variant: ProductVariant | null;
+
+  @Column('jsonb', { nullable: true })
+  variantCombination: Record<string, string> | null; // Store variant combination for order history (e.g., { "Size": "XL", "Color": "Red" })
 }
 

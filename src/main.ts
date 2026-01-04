@@ -9,11 +9,32 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // Enable CORS
+  const corsOrigin = configService.get<string>(
+    'CORS_ORIGIN',
+    'http://localhost:3000',
+  );
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+
   app.enableCors({
-    origin: configService.get<string>('CORS_ORIGIN', 'http://localhost:3000'),
+    origin:
+      nodeEnv === 'development'
+        ? true // Allow all origins in development
+        : corsOrigin, // Use specific origin in production
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-CSRF-Token', // Required for CSRF protection in authenticated requests
+    ],
+    exposedHeaders: [
+      'Content-Range',
+      'X-Content-Range',
+      'X-CSRF-Token', // Expose CSRF token to frontend
+    ],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Set global API prefix
@@ -30,8 +51,8 @@ async function bootstrap() {
 
   // Swagger configuration
   const config = new DocumentBuilder()
-    .setTitle('Pazaro Backend API')
-    .setDescription('Backend API for Pazaro marketplace - Seller endpoints')
+    .setTitle('PazarOne Backend API')
+    .setDescription('Backend API for PazarOne marketplace - Seller endpoints')
     .setVersion('1.0')
     .addBearerAuth(
       {
@@ -67,6 +88,8 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3001);
   await app.listen(port);
   console.log(`Application is running on: http://localhost:${port}`);
-  console.log(`Swagger documentation available at: http://localhost:${port}/api/docs`);
+  console.log(
+    `Swagger documentation available at: http://localhost:${port}/api/docs`,
+  );
 }
 bootstrap();

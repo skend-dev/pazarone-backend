@@ -15,11 +15,14 @@ import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { User } from '../users/entities/user.entity';
 import { PlatformModule } from '../platform/platform.module';
+import { AuthModule } from '../auth/auth.module';
+import { forwardRef } from '@nestjs/common';
 
 @Module({
   imports: [
     PlatformModule,
     TypeOrmModule.forFeature([SellerSettings, Order, OrderItem, Product, User]),
+    forwardRef(() => AuthModule),
   ],
   controllers: [
     SellerDashboardController,

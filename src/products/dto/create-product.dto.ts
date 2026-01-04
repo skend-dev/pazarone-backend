@@ -9,8 +9,14 @@ import {
   IsUUID,
   ArrayMinSize,
   ArrayMaxSize,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  CreateVariantAttributeDto,
+  CreateProductVariantDto,
+} from './create-product-variant.dto';
 
 export class CreateProductDto {
   @ApiProperty({
@@ -99,4 +105,24 @@ export class CreateProductDto {
   @Max(100)
   @IsOptional()
   affiliateCommission?: number;
+
+  @ApiPropertyOptional({
+    description: 'Variant attributes (e.g., Size, Color) - required if variants are provided',
+    type: [CreateVariantAttributeDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateVariantAttributeDto)
+  @IsOptional()
+  variantAttributes?: CreateVariantAttributeDto[];
+
+  @ApiPropertyOptional({
+    description: 'Product variants (combinations of attribute values) - required if variantAttributes are provided',
+    type: [CreateProductVariantDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateProductVariantDto)
+  @IsOptional()
+  variants?: CreateProductVariantDto[];
 }

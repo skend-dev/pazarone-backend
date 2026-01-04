@@ -21,6 +21,14 @@ class OrderItemDto {
   @IsNotEmpty()
   productId: string;
 
+  @ApiPropertyOptional({
+    description: 'Product Variant ID (required if product has variants)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsUUID()
+  @IsOptional()
+  variantId?: string;
+
   @ApiProperty({ description: 'Quantity', example: 2, minimum: 1 })
   @IsInt()
   @Min(1)
