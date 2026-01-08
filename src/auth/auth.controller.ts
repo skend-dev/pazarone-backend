@@ -254,7 +254,8 @@ export class AuthController {
     name: 'baseUrl',
     required: false,
     type: String,
-    description: 'Frontend URL for password reset link (defaults to FRONTEND_URL env var or http://localhost:3000)',
+    description:
+      'Frontend URL for password reset link (defaults to FRONTEND_URL env var or http://localhost:3000)',
   })
   @ApiResponse({
     status: 200,

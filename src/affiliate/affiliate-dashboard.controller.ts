@@ -70,12 +70,12 @@ export class AffiliateDashboardController {
           type: 'boolean',
           example: false,
           description:
-            'Whether user can withdraw (must meet minimum threshold AND not have withdrawal this month)',
+            'Whether user can withdraw (must meet minimum threshold AND not have an active withdrawal this month). REJECTED withdrawals don\'t block new requests.',
         },
         hasWithdrawalThisMonth: {
           type: 'boolean',
           example: false,
-          description: 'Whether a withdrawal was already requested this month',
+          description: 'Whether an active withdrawal (PENDING, APPROVED, or PAID) exists this month. REJECTED withdrawals don\'t count.',
         },
         nextWithdrawalDate: {
           type: 'string',

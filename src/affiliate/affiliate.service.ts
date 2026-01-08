@@ -375,7 +375,8 @@ export class AffiliateService {
 
     const minimumWithdrawal = await this.getMinimumWithdrawalThreshold();
 
-    // canWithdraw: must meet minimum threshold AND not have withdrawal this month
+    // canWithdraw: must meet minimum threshold AND not have an active withdrawal this month
+    // REJECTED withdrawals don't block - affiliate can request again in the same month
     const canWithdraw =
       availableBalance >= minimumWithdrawal && !hasWithdrawalThisMonth;
 
@@ -393,8 +394,8 @@ export class AffiliateService {
       pendingWithdrawals: Math.round(pendingWithdrawalsTotal * 100) / 100, // Total amount in pending/approved withdrawals
       minimumWithdrawal: minimumWithdrawal,
       canWithdraw: canWithdraw,
-      hasWithdrawalThisMonth: hasWithdrawalThisMonth, // NEW: Whether a withdrawal was already requested this month
-      nextWithdrawalDate: nextWithdrawalDate, // NEW: Date when next withdrawal can be requested (null if can request now)
+      hasWithdrawalThisMonth: hasWithdrawalThisMonth, // Whether an active withdrawal (PENDING/APPROVED/PAID) exists this month. REJECTED withdrawals don't count.
+      nextWithdrawalDate: nextWithdrawalDate, // Date when next withdrawal can be requested (null if can request now, or first day of next month if active withdrawal exists)
       pendingCount: pendingCommissions.length,
       approvedCount: approvedCommissions.length,
       paidCount: paidCommissions.length,
@@ -485,6 +486,8 @@ export class AffiliateService {
   }
 
   // Check if affiliate has already made a withdrawal request in the current month
+  // Only counts PENDING, APPROVED, or PAID withdrawals as blocking
+  // REJECTED withdrawals don't block - affiliate can request again in the same month
   async hasWithdrawalThisMonth(affiliateId: string): Promise<boolean> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -499,8 +502,8 @@ export class AffiliateService {
       999,
     );
 
-    // Count any withdrawal status (PENDING, APPROVED, PAID, REJECTED)
-    // Once a request is made, even if rejected, they can't request again this month
+    // Only count PENDING, APPROVED, or PAID withdrawals as blocking
+    // REJECTED withdrawals allow requesting again in the same month
     const count = await this.affiliateWithdrawalRepository
       .createQueryBuilder('withdrawal')
       .where('withdrawal.affiliateId = :affiliateId', { affiliateId })
@@ -509,6 +512,13 @@ export class AffiliateService {
       })
       .andWhere('withdrawal.createdAt <= :endOfMonth', {
         endOfMonth: endOfMonth.toISOString(),
+      })
+      .andWhere('withdrawal.status IN (:...statuses)', {
+        statuses: [
+          WithdrawalStatus.PENDING,
+          WithdrawalStatus.APPROVED,
+          WithdrawalStatus.PAID,
+        ],
       })
       .getCount();
 
@@ -548,7 +558,9 @@ export class AffiliateService {
       );
     }
 
-    // Check monthly limit - only one withdrawal per month
+    // Check monthly limit - only one active withdrawal per month
+    // REJECTED withdrawals don't count - affiliate can request again in the same month
+    // Only PENDING, APPROVED, or PAID withdrawals block new requests
     const hasWithdrawalThisMonth =
       await this.hasWithdrawalThisMonth(affiliateId);
     if (hasWithdrawalThisMonth) {
@@ -561,7 +573,7 @@ export class AffiliateService {
           })
         : 'next month';
       throw new BadRequestException(
-        `You have already requested a withdrawal this month. You can request your next withdrawal on ${nextDateStr}.`,
+        `You have an active withdrawal request this month. Once it's approved, you can request your next withdrawal on ${nextDateStr}.`,
       );
     }
 
