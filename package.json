@@ -20,7 +20,12 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:categories": "ts-node -r tsconfig-paths/register src/scripts/seed-categories.ts",
     "seed:admin": "ts-node -r tsconfig-paths/register src/scripts/seed-admin.ts",
-    "update:orders-payment-method": "ts-node -r tsconfig-paths/register src/scripts/update-orders-payment-method.ts"
+    "update:orders-payment-method": "ts-node -r tsconfig-paths/register src/scripts/update-orders-payment-method.ts",
+    "migration:generate": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:generate -d data-source.ts",
+    "migration:create": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:create",
+    "migration:run": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:run -d data-source.ts",
+    "migration:revert": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:revert -d data-source.ts",
+    "migration:show": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:show -d data-source.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
