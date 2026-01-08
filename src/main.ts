@@ -1,3 +1,6 @@
+// Import polyfills FIRST before any other imports
+import './polyfills';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';

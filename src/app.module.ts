@@ -1,3 +1,6 @@
+// Import polyfills FIRST before TypeORM (which uses crypto)
+import './polyfills';
+
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
