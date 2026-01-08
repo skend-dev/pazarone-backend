@@ -8,5 +8,5 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm run migration:run && npm run start:prod"
+cmd = "npm run deploy"
 
