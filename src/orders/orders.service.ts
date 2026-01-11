@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, ILike } from 'typeorm';
@@ -36,6 +37,8 @@ import {
 
 @Injectable()
 export class OrdersService {
+  private logger: Logger;
+
   constructor(
     @InjectRepository(Order)
     private ordersRepository: Repository<Order>,
@@ -64,7 +67,9 @@ export class OrdersService {
     @Inject(forwardRef(() => CustomerService))
     private customerService: CustomerService,
     private currencyService: CurrencyService,
-  ) {}
+  ) {
+    this.logger = new Logger(OrdersService.name);
+  }
 
   async findAll(
     sellerId: string,
@@ -347,13 +352,49 @@ export class OrdersService {
     return `ORD-${timestamp}-${random}`;
   }
 
-  // Create new order (supports guest orders)
+  // Helper method to group cart items by sellerId
+  private async groupItemsBySeller(
+    items: Array<{ productId: string; variantId?: string; quantity: number }>,
+  ): Promise<
+    Map<
+      string,
+      Array<{ productId: string; variantId?: string; quantity: number }>
+    >
+  > {
+    const itemsBySeller = new Map<
+      string,
+      Array<{ productId: string; variantId?: string; quantity: number }>
+    >();
+
+    for (const item of items) {
+      // Fetch product to get sellerId
+      const product = await this.productsRepository.findOne({
+        where: { id: item.productId },
+        select: ['id', 'sellerId'],
+      });
+
+      if (!product) {
+        throw new NotFoundException(
+          `Product with ID ${item.productId} not found`,
+        );
+      }
+
+      // Group by seller
+      if (!itemsBySeller.has(product.sellerId)) {
+        itemsBySeller.set(product.sellerId, []);
+      }
+      itemsBySeller.get(product.sellerId)!.push(item);
+    }
+
+    return itemsBySeller;
+  }
+
+  // Create new order (supports guest orders and multi-seller carts)
   async create(
     customerId: string | null,
     createOrderDto: CreateOrderDto,
   ): Promise<any> {
     const {
-      sellerId,
       items,
       shippingAddress,
       trackingId,
@@ -458,6 +499,103 @@ export class OrdersService {
       finalCustomerId = guestUser.id;
     }
 
+    // Group items by seller
+    const itemsBySeller = await this.groupItemsBySeller(items);
+
+    this.logger.log(
+      `Creating orders for ${itemsBySeller.size} seller(s) from cart with ${items.length} items`,
+    );
+
+    // Create orders for each seller
+    const createdOrders: any[] = [];
+    const errors: Array<{ sellerId: string; error: string }> = [];
+
+    for (const [sellerId, sellerItems] of itemsBySeller.entries()) {
+      try {
+        const order = await this.createOrderForSeller(
+          sellerId,
+          sellerItems,
+          finalCustomerId,
+          shippingAddress,
+          customer,
+          trackingId,
+          referralCode,
+          affiliateId,
+        );
+        createdOrders.push(order);
+      } catch (error) {
+        // Log error but continue processing other sellers
+        this.logger.error(
+          `Failed to create order for seller ${sellerId}:`,
+          error,
+        );
+        errors.push({
+          sellerId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    // If no orders were created successfully, throw error
+    if (createdOrders.length === 0) {
+      throw new BadRequestException(
+        `Failed to create any orders. Errors: ${JSON.stringify(errors)}`,
+      );
+    }
+
+    // Save shipping address for authenticated customers (not guests)
+    // Only save if customer is authenticated (providedCustomerId or customerId was set)
+    if (providedCustomerId || customerId) {
+      try {
+        const customerIdToUse = providedCustomerId || customerId;
+        if (customerIdToUse) {
+          // Check if customer has any addresses
+          const existingAddresses =
+            await this.customerService.getAddresses(customerIdToUse);
+
+          // If no addresses exist, save the shipping address as default (first address)
+          // If addresses exist, save as non-default (or allow user preference)
+          const isFirstAddress = existingAddresses.length === 0;
+
+          await this.customerService.createAddress(customerIdToUse, {
+            street: shippingAddress.street,
+            city: shippingAddress.city,
+            state: shippingAddress.state,
+            zip: shippingAddress.zip,
+            country: shippingAddress.country,
+            phone: shippingAddress.phone || customer.phone || '',
+            isDefault: isFirstAddress, // Set as default only if it's the first address
+          });
+        }
+      } catch (error) {
+        // Log error but don't fail order creation
+        this.logger.error(
+          `Failed to save shipping address for customer:`,
+          error,
+        );
+      }
+    }
+
+    // Return created orders summary
+    return {
+      success: true,
+      ordersCreated: createdOrders.length,
+      orders: createdOrders,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+  }
+
+  // Create order for a specific seller
+  private async createOrderForSeller(
+    sellerId: string,
+    items: Array<{ productId: string; variantId?: string; quantity: number }>,
+    customerId: string,
+    shippingAddress: any,
+    customer: any,
+    trackingId?: string,
+    referralCode?: string,
+    affiliateId?: string,
+  ): Promise<any> {
     // Get seller to determine base currency
     const seller = await this.usersRepository.findOne({
       where: { id: sellerId },
@@ -726,11 +864,10 @@ export class OrdersService {
 
     // Create order - merge phone from customer info into shippingAddress
     // Default payment method is 'cod' (Cash on Delivery)
-    // TODO: Add paymentMethod to CreateOrderDto if you need to support other payment methods
     const order = this.ordersRepository.create({
       orderNumber: this.generateOrderNumber(),
       sellerId,
-      customerId: finalCustomerId,
+      customerId: customerId,
       affiliateId: finalAffiliateId,
       referralCode: finalReferralCode,
       totalAmount, // Total in buyer currency
@@ -824,7 +961,7 @@ export class OrdersService {
       };
 
       // Notify seller (only if seller is not the same as customer)
-      if (sellerId !== finalCustomerId) {
+      if (sellerId !== customerId) {
         const sellerNotification =
           await this.notificationsService.createOrderNotification(
             sellerId,
@@ -841,10 +978,10 @@ export class OrdersService {
       }
 
       // Notify customer
-      if (finalCustomerId) {
+      if (customerId) {
         const customerNotification =
           await this.notificationsService.createOrderNotification(
-            finalCustomerId,
+            customerId,
             NotificationType.ORDER_CREATED,
             savedOrder.id,
             savedOrder.orderNumber,
@@ -852,7 +989,7 @@ export class OrdersService {
             true, // isCustomer = true
           );
         await this.notificationsGateway.sendNotificationToUser(
-          finalCustomerId,
+          customerId,
           customerNotification,
         );
       }
@@ -867,8 +1004,7 @@ export class OrdersService {
     // Send email notifications
     try {
       // Get customer email (from order or customer entity)
-      const customerEmail =
-        customer.email || savedOrder.customer?.email || null;
+      const customerEmail = customer.email || null;
 
       // Send order confirmation email to customer
       if (customerEmail) {
@@ -887,12 +1023,12 @@ export class OrdersService {
       }
 
       // Send seller notification email
-      const seller = await this.usersRepository.findOne({
+      const sellerUser = await this.usersRepository.findOne({
         where: { id: sellerId },
       });
-      if (seller?.email) {
+      if (sellerUser?.email) {
         await this.emailService.sendSellerNotification(
-          seller.email,
+          sellerUser.email,
           'new_order',
           {
             orderNumber: savedOrder.orderNumber,
@@ -908,42 +1044,11 @@ export class OrdersService {
       );
     }
 
-    // Save shipping address for authenticated customers (not guests)
-    // Only save if customer is authenticated (providedCustomerId or customerId was set)
-    if (providedCustomerId || customerId) {
-      try {
-        const customerIdToUse = providedCustomerId || customerId;
-        if (customerIdToUse) {
-          // Check if customer has any addresses
-          const existingAddresses =
-            await this.customerService.getAddresses(customerIdToUse);
-
-          // If no addresses exist, save the shipping address as default (first address)
-          // If addresses exist, save as non-default (or allow user preference)
-          const isFirstAddress = existingAddresses.length === 0;
-
-          await this.customerService.createAddress(customerIdToUse, {
-            street: shippingAddress.street,
-            city: shippingAddress.city,
-            state: shippingAddress.state,
-            zip: shippingAddress.zip,
-            country: shippingAddress.country,
-            phone: shippingAddress.phone || customer.phone || '',
-            isDefault: isFirstAddress, // Set as default only if it's the first address
-          });
-        }
-      } catch (error) {
-        // Log error but don't fail order creation
-        console.error(
-          `[Order ${savedOrder.orderNumber}] Failed to save shipping address:`,
-          error,
-        );
-      }
-    }
-
     // Reload with relations
     return this.findOnePublic(savedOrder.id);
   }
+
+  // Old create method removed - now using multi-seller approach above
 
   // Cancel order
   async cancel(

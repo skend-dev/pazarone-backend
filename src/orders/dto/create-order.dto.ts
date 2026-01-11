@@ -89,15 +89,7 @@ class CustomerInfoDto {
 
 export class CreateOrderDto {
   @ApiProperty({
-    description: 'Seller ID (UUID)',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @IsUUID()
-  @IsNotEmpty()
-  sellerId: string;
-
-  @ApiProperty({
-    description: 'Order items',
+    description: 'Order items (can contain products from multiple sellers)',
     type: [OrderItemDto],
   })
   @IsArray()
