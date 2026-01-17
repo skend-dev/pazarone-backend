@@ -308,32 +308,115 @@ export class InvoiceService {
         });
 
       let affiliateFee = 0;
-      affiliateCommissions.forEach((commission) => {
-        affiliateFee += parseFloat(commission.commissionAmount.toString());
-      });
-
-      const totalOwed = platformFee + affiliateFee;
-
-      // Calculate affiliate fee percentage (average across items)
       let affiliateFeePercent: number | null = null;
-      if (affiliateFee > 0 && order.items && order.items.length > 0) {
-        // Calculate average affiliate commission percentage from order items
-        let totalItemAmount = 0;
-        let totalCommission = 0;
-        for (const item of order.items) {
-          const itemTotal =
-            parseFloat(item.basePrice?.toString() || item.price.toString()) *
-            item.quantity;
-          totalItemAmount += itemTotal;
-          if (item.product) {
-            totalCommission +=
-              (itemTotal * item.product.affiliateCommission) / 100;
+
+      if (affiliateCommissions.length > 0) {
+        // If affiliate commissions exist, use them (affiliate gets paid)
+        affiliateCommissions.forEach((commission) => {
+          affiliateFee += parseFloat(commission.commissionAmount.toString());
+        });
+
+        // Calculate affiliate fee percentage (average across items)
+        if (order.items && order.items.length > 0) {
+          let totalItemAmount = 0;
+          let totalCommission = 0;
+          for (const item of order.items) {
+            // IMPORTANT: Always use basePrice (seller currency), never price (buyer currency)
+            // If basePrice is null, we need to calculate it from price using exchange rate
+            let itemTotal: number;
+
+            if (item.basePrice !== null && item.basePrice !== undefined) {
+              // Use basePrice directly (seller's base currency)
+              itemTotal = parseFloat(item.basePrice.toString()) * item.quantity;
+            } else {
+              // Fallback: convert from buyer currency to seller currency using order exchange rate
+              // This should rarely happen, but handle it safely
+              const buyerPrice =
+                parseFloat(item.price.toString()) * item.quantity;
+              const exchangeRate = order.exchangeRate || 61.5; // Default exchange rate
+
+              if (
+                order.buyerCurrency === 'EUR' &&
+                order.sellerBaseCurrency === 'MKD'
+              ) {
+                // Buyer paid in EUR, seller base is MKD - convert EUR to MKD
+                itemTotal = buyerPrice * exchangeRate;
+              } else if (
+                order.buyerCurrency === 'MKD' &&
+                order.sellerBaseCurrency === 'EUR'
+              ) {
+                // Buyer paid in MKD, seller base is EUR - convert MKD to EUR
+                itemTotal = buyerPrice / exchangeRate;
+              } else {
+                // Same currency, use as-is
+                itemTotal = buyerPrice;
+              }
+            }
+
+            totalItemAmount += itemTotal;
+            if (item.product) {
+              totalCommission +=
+                (itemTotal * item.product.affiliateCommission) / 100;
+            }
+          }
+          if (totalItemAmount > 0) {
+            affiliateFeePercent = (totalCommission / totalItemAmount) * 100;
           }
         }
-        if (totalItemAmount > 0) {
-          affiliateFeePercent = (totalCommission / totalItemAmount) * 100;
+      } else {
+        // If NO affiliate commissions exist, calculate what they would have been
+        // and charge that as affiliate fee (platform keeps it, but seller sees it as "Affiliate Fee")
+        if (order.items && order.items.length > 0) {
+          let totalItemAmount = 0;
+          let totalCommission = 0;
+          for (const item of order.items) {
+            // IMPORTANT: Always use basePrice (seller currency), never price (buyer currency)
+            // If basePrice is null, we need to calculate it from price using exchange rate
+            let itemTotal: number;
+
+            if (item.basePrice !== null && item.basePrice !== undefined) {
+              // Use basePrice directly (seller's base currency)
+              itemTotal = parseFloat(item.basePrice.toString()) * item.quantity;
+            } else {
+              // Fallback: convert from buyer currency to seller currency using order exchange rate
+              // This should rarely happen, but handle it safely
+              const buyerPrice =
+                parseFloat(item.price.toString()) * item.quantity;
+              const exchangeRate = order.exchangeRate || 61.5; // Default exchange rate
+
+              if (
+                order.buyerCurrency === 'EUR' &&
+                order.sellerBaseCurrency === 'MKD'
+              ) {
+                // Buyer paid in EUR, seller base is MKD - convert EUR to MKD
+                itemTotal = buyerPrice * exchangeRate;
+              } else if (
+                order.buyerCurrency === 'MKD' &&
+                order.sellerBaseCurrency === 'EUR'
+              ) {
+                // Buyer paid in MKD, seller base is EUR - convert MKD to EUR
+                itemTotal = buyerPrice / exchangeRate;
+              } else {
+                // Same currency, use as-is
+                itemTotal = buyerPrice;
+              }
+            }
+
+            totalItemAmount += itemTotal;
+            if (item.product && item.product.affiliateCommission > 0) {
+              // Calculate affiliate fee based on product's affiliate commission percentage
+              totalCommission +=
+                (itemTotal * item.product.affiliateCommission) / 100;
+            }
+          }
+          if (totalItemAmount > 0 && totalCommission > 0) {
+            affiliateFee = totalCommission; // Charged as affiliate fee (platform keeps it)
+            affiliateFeePercent = (totalCommission / totalItemAmount) * 100;
+          }
         }
       }
+
+      const totalOwed = platformFee + affiliateFee;
 
       // Get delivery date (use updatedAt when status changed to DELIVERED)
       const deliveryDate = order.updatedAt || order.createdAt;

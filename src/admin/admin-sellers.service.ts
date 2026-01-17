@@ -307,17 +307,69 @@ export class AdminSellersService {
     let affiliateCommissionMKD = 0;
     let affiliateCommissionEUR = 0;
 
-    affiliateCommissions.forEach((commission) => {
-      const commissionAmount = parseFloat(
-        commission.commissionAmount.toString(),
-      );
-      // Affiliate commissions are stored in the seller's base currency
-      if (sellerCurrency === 'MKD') {
-        affiliateCommissionMKD += commissionAmount;
-      } else if (sellerCurrency === 'EUR') {
-        affiliateCommissionEUR += commissionAmount;
+    if (affiliateCommissions.length > 0) {
+      // If affiliate commissions exist, use them (affiliate gets paid)
+      affiliateCommissions.forEach((commission) => {
+        const commissionAmount = parseFloat(
+          commission.commissionAmount.toString(),
+        );
+        // Affiliate commissions are stored in the seller's base currency
+        if (sellerCurrency === 'MKD') {
+          affiliateCommissionMKD += commissionAmount;
+        } else if (sellerCurrency === 'EUR') {
+          affiliateCommissionEUR += commissionAmount;
+        }
+      });
+    } else {
+      // If NO affiliate commissions exist, calculate what they would have been
+      // and charge that as marketing commission (platform keeps it)
+      // Load order items with products if not already loaded
+      if (!order.items || order.items.length === 0) {
+        const orderWithItems = await this.ordersRepository.findOne({
+          where: { id: order.id },
+          relations: ['items', 'items.product'],
+        });
+        if (orderWithItems) {
+          order.items = orderWithItems.items;
+        }
       }
-    });
+
+      if (order.items && order.items.length > 0) {
+        let totalCommission = 0;
+        for (const item of order.items) {
+          // IMPORTANT: Always use basePrice (seller currency), never price (buyer currency)
+          let itemTotal: number;
+          
+          if (item.basePrice !== null && item.basePrice !== undefined) {
+            itemTotal = parseFloat(item.basePrice.toString()) * item.quantity;
+          } else {
+            // Fallback: convert from buyer currency to seller currency
+            const buyerPrice = parseFloat(item.price.toString()) * item.quantity;
+            const exchangeRate = order.exchangeRate || 61.5;
+            
+            if (order.buyerCurrency === 'EUR' && order.sellerBaseCurrency === 'MKD') {
+              itemTotal = buyerPrice * exchangeRate;
+            } else if (order.buyerCurrency === 'MKD' && order.sellerBaseCurrency === 'EUR') {
+              itemTotal = buyerPrice / exchangeRate;
+            } else {
+              itemTotal = buyerPrice;
+            }
+          }
+          
+          if (item.product && item.product.affiliateCommission > 0) {
+            // Calculate affiliate commission based on product's affiliate commission percentage
+            totalCommission +=
+              (itemTotal * item.product.affiliateCommission) / 100;
+          }
+        }
+        // Charged as affiliate commission (platform keeps it)
+        if (sellerCurrency === 'MKD') {
+          affiliateCommissionMKD = totalCommission;
+        } else if (sellerCurrency === 'EUR') {
+          affiliateCommissionEUR = totalCommission;
+        }
+      }
+    }
 
     const affiliateCommission = affiliateCommissionMKD + affiliateCommissionEUR;
 
