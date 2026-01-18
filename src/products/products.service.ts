@@ -23,6 +23,7 @@ import { forwardRef, Inject } from '@nestjs/common';
 import { CurrencyService, Market } from '../common/currency/currency.service';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class ProductsService {
@@ -47,6 +48,7 @@ export class ProductsService {
     private notificationsGateway: NotificationsGateway,
     private currencyService: CurrencyService,
     private platformSettingsService: PlatformSettingsService,
+    private cloudinaryService: CloudinaryService,
   ) {}
 
   async create(
@@ -529,6 +531,34 @@ export class ProductsService {
       // baseCurrency should remain the same (determined by seller's market)
     }
 
+    // Handle image cleanup if images are being updated
+    if (updateProductDto.images !== undefined) {
+      const oldImages = product.images || [];
+      const newImages = updateProductDto.images;
+      const imagesToDelete = oldImages.filter(
+        (oldUrl) => !newImages.includes(oldUrl),
+      );
+
+      // Delete removed images from Cloudinary
+      if (imagesToDelete.length > 0) {
+        try {
+          const publicIds = imagesToDelete
+            .map((url) => this.cloudinaryService.extractPublicIdFromUrl(url))
+            .filter((id): id is string => id !== null);
+
+          if (publicIds.length > 0) {
+            await this.cloudinaryService.deleteMultipleImages(publicIds);
+          }
+        } catch (error) {
+          // Log error but don't fail product update if deletion fails
+          console.error(
+            `Failed to delete old images for product ${id}:`,
+            error,
+          );
+        }
+      }
+    }
+
     Object.assign(product, productData);
 
     // Prevent frozen sellers from activating products (status should not change to ACTIVE)
@@ -608,10 +638,27 @@ export class ProductsService {
     if (orderItemsCount > 0) {
       // Product has orders - soft delete by setting status to INACTIVE
       // This preserves order history while effectively removing the product from the store
+      // Keep images in case of order history needs them
       product.status = ProductStatus.INACTIVE;
       await this.productsRepository.save(product);
     } else {
       // No orders - safe to hard delete
+      // Delete images from Cloudinary before removing product
+      if (product.images && product.images.length > 0) {
+        try {
+          const publicIds = product.images
+            .map((url) => this.cloudinaryService.extractPublicIdFromUrl(url))
+            .filter((id): id is string => id !== null);
+
+          if (publicIds.length > 0) {
+            await this.cloudinaryService.deleteMultipleImages(publicIds);
+          }
+        } catch (error) {
+          // Log error but don't fail product deletion if image deletion fails
+          console.error(`Failed to delete images for product ${id}:`, error);
+        }
+      }
+
       await this.productsRepository.remove(product);
     }
   }
@@ -623,6 +670,29 @@ export class ProductsService {
     userType?: UserType,
   ): Promise<Product> {
     const product = await this.findOne(id, sellerId, userType);
+
+    // Find images that are being removed (old images not in new array)
+    const oldImages = product.images || [];
+    const imagesToDelete = oldImages.filter(
+      (oldUrl) => !images.includes(oldUrl),
+    );
+
+    // Delete removed images from Cloudinary
+    if (imagesToDelete.length > 0) {
+      try {
+        const publicIds = imagesToDelete
+          .map((url) => this.cloudinaryService.extractPublicIdFromUrl(url))
+          .filter((id): id is string => id !== null);
+
+        if (publicIds.length > 0) {
+          await this.cloudinaryService.deleteMultipleImages(publicIds);
+        }
+      } catch (error) {
+        // Log error but don't fail image update if deletion fails
+        console.error(`Failed to delete old images for product ${id}:`, error);
+      }
+    }
+
     product.images = images;
     const updatedProduct = await this.productsRepository.save(product);
 

@@ -73,4 +73,35 @@ export class CloudinaryService {
       throw new Error(`Failed to delete images: ${error.message}`);
     }
   }
+
+  /**
+   * Extract public ID from Cloudinary URL
+   * Converts: https://res.cloudinary.com/cloud/image/upload/v123/pazarone/products/img.jpg
+   * To: pazarone/products/img
+   */
+  extractPublicIdFromUrl(url: string): string | null {
+    if (!url) return null;
+
+    try {
+      // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{public_id}.{format}
+      const urlPattern =
+        /\/upload\/(?:v\d+\/)?([^\/]+(?:\/[^\/]+)*?)(?:\.[^.]+)?$/;
+      const match = url.match(urlPattern);
+
+      if (match && match[1]) {
+        return match[1];
+      }
+
+      // Fallback: try to extract from full URL path
+      const pathMatch = url.match(/\/pazarone\/[^?]+/);
+      if (pathMatch) {
+        return pathMatch[0].replace(/^\//, '').replace(/\.[^.]+$/, '');
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to extract public ID from URL:', error);
+      return null;
+    }
+  }
 }

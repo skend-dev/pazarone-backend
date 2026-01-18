@@ -13,6 +13,7 @@ import { User } from '../users/entities/user.entity';
 import { CurrencyModule } from '../common/currency/currency.module';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { PlatformModule } from '../platform/platform.module';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PlatformModule } from '../platform/platform.module';
     forwardRef(() => NotificationsModule),
     CurrencyModule,
     PlatformModule,
+    CloudinaryModule,
   ],
   controllers: [ProductsController, PublicProductsController],
   providers: [ProductsService],
