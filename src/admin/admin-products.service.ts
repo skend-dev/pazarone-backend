@@ -106,6 +106,7 @@ export class AdminProductsService {
           : null,
         affiliateCommission: parseFloat(product.affiliateCommission.toString()),
         sales: product.sales,
+        views: product.views,
         rating: product.rating,
         reviewsCount: product.reviewsCount,
         createdAt: product.createdAt,

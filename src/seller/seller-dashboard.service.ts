@@ -78,6 +78,14 @@ export class SellerDashboardService {
       },
     });
 
+    // Calculate total views across all products
+    const totalViewsResult = await this.productsRepository
+      .createQueryBuilder('product')
+      .select('SUM(product.views)', 'total')
+      .where('product.sellerId = :sellerId', { sellerId })
+      .getRawOne();
+    const totalViews = parseInt(totalViewsResult?.total || '0', 10);
+
     // Calculate average response time (mock for now - would need order response tracking)
     const avgResponseTime = '2h 15m';
 
@@ -161,6 +169,7 @@ export class SellerDashboardService {
       ) / 100,
       totalOrders: currentOrders,
       activeProducts,
+      totalViews,
       avgResponseTime,
       revenueChange: Math.round(revenueChange * 100) / 100,
       ordersChange: Math.round(ordersChange * 100) / 100,

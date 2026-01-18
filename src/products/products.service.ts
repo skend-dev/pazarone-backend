@@ -86,11 +86,15 @@ export class ProductsService {
 
     // Validate affiliate commission against platform settings
     if (createProductDto.affiliateCommission !== undefined) {
-      const minCommission = await this.platformSettingsService.getAffiliateCommissionMin();
-      const maxCommission = await this.platformSettingsService.getAffiliateCommissionMax();
-      
-      if (createProductDto.affiliateCommission < minCommission || 
-          createProductDto.affiliateCommission > maxCommission) {
+      const minCommission =
+        await this.platformSettingsService.getAffiliateCommissionMin();
+      const maxCommission =
+        await this.platformSettingsService.getAffiliateCommissionMax();
+
+      if (
+        createProductDto.affiliateCommission < minCommission ||
+        createProductDto.affiliateCommission > maxCommission
+      ) {
         throw new BadRequestException(
           `Affiliate commission must be between ${minCommission}% and ${maxCommission}%`,
         );
@@ -327,11 +331,15 @@ export class ProductsService {
 
     // Validate affiliate commission against platform settings
     if (updateProductDto.affiliateCommission !== undefined) {
-      const minCommission = await this.platformSettingsService.getAffiliateCommissionMin();
-      const maxCommission = await this.platformSettingsService.getAffiliateCommissionMax();
-      
-      if (updateProductDto.affiliateCommission < minCommission || 
-          updateProductDto.affiliateCommission > maxCommission) {
+      const minCommission =
+        await this.platformSettingsService.getAffiliateCommissionMin();
+      const maxCommission =
+        await this.platformSettingsService.getAffiliateCommissionMax();
+
+      if (
+        updateProductDto.affiliateCommission < minCommission ||
+        updateProductDto.affiliateCommission > maxCommission
+      ) {
         throw new BadRequestException(
           `Affiliate commission must be between ${minCommission}% and ${maxCommission}%`,
         );
@@ -525,7 +533,11 @@ export class ProductsService {
 
     // Prevent frozen sellers from activating products (status should not change to ACTIVE)
     // Allow status to remain ACTIVE if it was already ACTIVE (don't force deactivate existing active products)
-    if (isFrozen && product.status === ProductStatus.ACTIVE && originalStatus !== ProductStatus.ACTIVE) {
+    if (
+      isFrozen &&
+      product.status === ProductStatus.ACTIVE &&
+      originalStatus !== ProductStatus.ACTIVE
+    ) {
       // Product status was changed to ACTIVE but seller is frozen - prevent activation
       product.status = originalStatus; // Revert to original status
       throw new BadRequestException(
@@ -751,15 +763,30 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
+    // Increment view count
+    await this.productsRepository.increment({ id }, 'views', 1);
+
+    // Reload product to get updated views count
+    const updatedProduct = await this.productsRepository.findOne({
+      where: { id },
+      relations: [
+        'category',
+        'seller',
+        'variantAttributes',
+        'variantAttributes.values',
+        'variants',
+      ],
+    });
+
     // Get seller settings to include store name
     const sellerSettings = await this.sellerSettingsRepository.findOne({
-      where: { sellerId: product.sellerId },
+      where: { sellerId: updatedProduct!.sellerId },
     });
 
     return {
-      ...product,
+      ...updatedProduct!,
       seller: {
-        ...product.seller,
+        ...updatedProduct!.seller,
         storeName: sellerSettings?.storeName || null,
         storeLogo: sellerSettings?.logo || null,
       },

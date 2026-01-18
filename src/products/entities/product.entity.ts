@@ -98,6 +98,9 @@ export class Product {
   @Column('int', { default: 0 })
   sales: number;
 
+  @Column('int', { default: 0 })
+  views: number;
+
   @CreateDateColumn()
   createdAt: Date;
 
@@ -107,11 +110,9 @@ export class Product {
   @OneToMany(() => OrderItem, (orderItem) => orderItem.product)
   orderItems: OrderItem[];
 
-  @OneToMany(
-    () => ProductVariantAttribute,
-    (attribute) => attribute.product,
-    { cascade: true },
-  )
+  @OneToMany(() => ProductVariantAttribute, (attribute) => attribute.product, {
+    cascade: true,
+  })
   variantAttributes: ProductVariantAttribute[];
 
   @OneToMany(() => ProductVariant, (variant) => variant.product, {

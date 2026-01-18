@@ -15,6 +15,7 @@ export class DashboardStatsDto {
   affiliateCommission: number;
   totalOrders: number;
   activeProducts: number;
+  totalViews: number;
   avgResponseTime: string;
   revenueChange: number;
   ordersChange: number;

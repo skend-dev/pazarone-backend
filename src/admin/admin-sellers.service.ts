@@ -65,18 +65,25 @@ export class AdminSellersService {
           where: { sellerId: user.id },
         });
 
-        const [totalOrders, totalRevenue, totalProducts] = await Promise.all([
-          this.ordersRepository.count({ where: { sellerId: user.id } }),
-          this.ordersRepository
-            .createQueryBuilder('order')
-            .select('SUM(order.totalAmount)', 'total')
-            .where('order.sellerId = :sellerId', { sellerId: user.id })
-            .andWhere('order.status = :status', {
-              status: OrderStatus.DELIVERED,
-            })
-            .getRawOne(),
-          this.productsRepository.count({ where: { sellerId: user.id } }),
-        ]);
+        const [totalOrders, totalRevenue, totalProducts, totalViewsResult] =
+          await Promise.all([
+            this.ordersRepository.count({ where: { sellerId: user.id } }),
+            this.ordersRepository
+              .createQueryBuilder('order')
+              .select('SUM(order.totalAmount)', 'total')
+              .where('order.sellerId = :sellerId', { sellerId: user.id })
+              .andWhere('order.status = :status', {
+                status: OrderStatus.DELIVERED,
+              })
+              .getRawOne(),
+            this.productsRepository.count({ where: { sellerId: user.id } }),
+            this.productsRepository
+              .createQueryBuilder('product')
+              .select('SUM(product.views)', 'total')
+              .where('product.sellerId = :sellerId', { sellerId: user.id })
+              .getRawOne(),
+          ]);
+        const totalViews = parseInt(totalViewsResult?.total || '0', 10);
 
         // Get platform fee (seller-specific or default)
         const platformFeePercent =
@@ -101,6 +108,7 @@ export class AdminSellersService {
           totalOrders,
           totalRevenue: parseFloat(totalRevenue?.total || '0'),
           totalProducts,
+          totalViews,
           paymentRestricted: settings?.paymentRestricted || false,
           paymentRestrictedAt: settings?.paymentRestrictedAt || null,
           createdAt: user.createdAt,
