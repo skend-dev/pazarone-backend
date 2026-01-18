@@ -11,7 +11,10 @@ import { InvoiceItem } from './entities/invoice-item.entity';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
 import { User, UserType } from '../users/entities/user.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
-import { AffiliateCommission } from '../affiliate/entities/affiliate-commission.entity';
+import {
+  AffiliateCommission,
+  CommissionStatus,
+} from '../affiliate/entities/affiliate-commission.entity';
 import { SellerSettingsService } from '../seller/seller-settings.service';
 import { Product, ProductStatus } from '../products/entities/product.entity';
 import { ConfigService } from '@nestjs/config';
@@ -951,6 +954,26 @@ This is an automated email from PazarOne. Please do not reply to this email.
       },
     );
 
+    // Approve affiliate commissions when invoice is paid
+    // This marks commissions as APPROVED, making them eligible for payment
+    // A separate action will mark them as PAID when actually paid to affiliate
+    // Update PENDING commissions to APPROVED (commissions stay PENDING until invoice is paid)
+    const updateResult = await this.affiliateCommissionRepository.update(
+      {
+        orderId: In(orderIds),
+        status: CommissionStatus.PENDING,
+      },
+      {
+        status: CommissionStatus.APPROVED,
+      },
+    );
+
+    if (updateResult.affected && updateResult.affected > 0) {
+      this.logger.log(
+        `Approved ${updateResult.affected} affiliate commission(s) for invoice ${invoice.invoiceNumber}`,
+      );
+    }
+
     // Check and update payment restriction status
     await this.updateSellerPaymentRestriction(sellerId);
 
@@ -992,6 +1015,26 @@ This is an automated email from PazarOne. Please do not reply to this email.
         paymentSettledAt: new Date(),
       },
     );
+
+    // Approve affiliate commissions when invoice is paid
+    // This marks commissions as APPROVED, making them eligible for payment
+    // A separate action will mark them as PAID when actually paid to affiliate
+    // Update PENDING commissions to APPROVED (commissions stay PENDING until invoice is paid)
+    const updateResult = await this.affiliateCommissionRepository.update(
+      {
+        orderId: In(orderIds),
+        status: CommissionStatus.PENDING,
+      },
+      {
+        status: CommissionStatus.APPROVED,
+      },
+    );
+
+    if (updateResult.affected && updateResult.affected > 0) {
+      this.logger.log(
+        `Approved ${updateResult.affected} affiliate commission(s) for invoice ${invoice.invoiceNumber}`,
+      );
+    }
 
     // Check and update payment restriction status
     await this.updateSellerPaymentRestriction(invoice.sellerId);

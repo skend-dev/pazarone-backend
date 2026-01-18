@@ -252,6 +252,8 @@ export class AffiliateService {
   }
 
   // Update commission status when order status changes
+  // Note: Commissions remain PENDING when order is delivered
+  // They become APPROVED when the invoice is paid (handled in invoice service)
   async updateCommissionStatus(
     orderId: string,
     orderStatus: OrderStatus,
@@ -261,16 +263,17 @@ export class AffiliateService {
     });
 
     for (const commission of commissions) {
-      if (orderStatus === OrderStatus.DELIVERED) {
-        commission.status = CommissionStatus.APPROVED;
-      } else if (
+      // Only cancel commissions if order is cancelled/returned
+      // Keep PENDING for delivered orders - they'll be approved when invoice is paid
+      if (
         orderStatus === OrderStatus.CANCELLED ||
         orderStatus === OrderStatus.RETURNED
       ) {
         commission.status = CommissionStatus.CANCELLED;
+        await this.affiliateCommissionRepository.save(commission);
       }
-      // Keep PENDING for other statuses
-      await this.affiliateCommissionRepository.save(commission);
+      // For DELIVERED status, keep commissions as PENDING
+      // They will be approved when the invoice is marked as paid
     }
   }
 
