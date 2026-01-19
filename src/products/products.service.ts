@@ -646,17 +646,30 @@ export class ProductsService {
       // Delete images from Cloudinary before removing product
       if (product.images && product.images.length > 0) {
         try {
+          console.log(`Deleting images for product ${id}. Image URLs:`, product.images);
+          
           const publicIds = product.images
-            .map((url) => this.cloudinaryService.extractPublicIdFromUrl(url))
+            .map((url) => {
+              const publicId = this.cloudinaryService.extractPublicIdFromUrl(url);
+              console.log(`Extracted public ID from URL ${url}:`, publicId);
+              return publicId;
+            })
             .filter((id): id is string => id !== null);
 
-          if (publicIds.length > 0) {
+          if (publicIds.length === 0) {
+            console.warn(`No valid public IDs extracted from product ${id} images. URLs:`, product.images);
+          } else {
+            console.log(`Deleting ${publicIds.length} images with public IDs:`, publicIds);
             await this.cloudinaryService.deleteMultipleImages(publicIds);
+            console.log(`Successfully deleted images for product ${id}`);
           }
         } catch (error) {
           // Log error but don't fail product deletion if image deletion fails
           console.error(`Failed to delete images for product ${id}:`, error);
+          console.error('Error details:', error instanceof Error ? error.stack : error);
         }
+      } else {
+        console.log(`Product ${id} has no images to delete`);
       }
 
       await this.productsRepository.remove(product);

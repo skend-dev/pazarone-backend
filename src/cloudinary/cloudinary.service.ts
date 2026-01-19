@@ -67,9 +67,30 @@ export class CloudinaryService {
   }
 
   async deleteMultipleImages(publicIds: string[]): Promise<void> {
+    if (!publicIds || publicIds.length === 0) {
+      console.warn('No public IDs provided for deletion');
+      return;
+    }
+
     try {
-      await cloudinary.api.delete_resources(publicIds);
+      console.log(`Attempting to delete ${publicIds.length} images from Cloudinary:`, publicIds);
+      const result = await cloudinary.api.delete_resources(publicIds, {
+        resource_type: 'image',
+        invalidate: true, // Invalidate CDN cache to ensure images are removed
+      });
+      
+      console.log('Cloudinary deletion result:', JSON.stringify(result, null, 2));
+      
+      // Check if deletion was successful
+      if (result.deleted && Object.keys(result.deleted).length > 0) {
+        console.log(`Successfully deleted ${Object.keys(result.deleted).length} images`);
+      }
+      
+      if (result.not_found && result.not_found.length > 0) {
+        console.warn(`Images not found in Cloudinary:`, result.not_found);
+      }
     } catch (error) {
+      console.error('Cloudinary deletion error:', error);
       throw new Error(`Failed to delete images: ${error.message}`);
     }
   }
