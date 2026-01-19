@@ -132,6 +132,18 @@ export const categorySeedData: CategorySeedData[] = [
       tr: 'İç Çamaşırı ve Gecelik',
     },
   },
+  {
+    name: 'Food & Natural Products',
+    slug: 'food-natural',
+    icon: 'food',
+    type: CategoryType.PRIMARY,
+    parentSlug: null,
+    translations: {
+      mk: 'Храна и природни производи',
+      sq: 'Ushqime dhe produkte natyrore',
+      tr: 'Gıda ve Doğal Ürünler',
+    },
+  },
 
   // ============================================
   // SECONDARY CATEGORIES
@@ -182,6 +194,18 @@ export const categorySeedData: CategorySeedData[] = [
       mk: 'Деца и бебета',
       sq: 'Fëmijë dhe foshnja',
       tr: 'Çocuk ve Bebek',
+    },
+  },
+  {
+    name: 'Health & Wellness',
+    slug: 'health-wellness',
+    icon: 'wellness',
+    type: CategoryType.SECONDARY,
+    parentSlug: null,
+    translations: {
+      mk: 'Здравје и благосостојба',
+      sq: 'Shëndet dhe mirëqenie',
+      tr: 'Sağlık ve Zindelik',
     },
   },
 
@@ -882,6 +906,86 @@ export const categorySeedData: CategorySeedData[] = [
       mk: 'Чорапи',
       sq: 'Çorape',
       tr: 'Çoraplar',
+    },
+  },
+
+  // ============================================
+  // SUBCATEGORIES - Food & Natural Products
+  // ============================================
+  {
+    name: 'Honey & Bee Products',
+    slug: 'honey-bee',
+    icon: 'honey',
+    type: CategoryType.SUBCATEGORY,
+    parentSlug: 'food-natural',
+    translations: {
+      mk: 'Мед и пчелни производи',
+      sq: 'Mjaltë dhe produkte bletësh',
+      tr: 'Bal ve Arı Ürünleri',
+    },
+  },
+  {
+    name: 'Spices & Superfoods',
+    slug: 'spices-superfoods',
+    icon: 'spices',
+    type: CategoryType.SUBCATEGORY,
+    parentSlug: 'food-natural',
+    translations: {
+      mk: 'Зачини и супер храна',
+      sq: 'Erëza dhe superushqime',
+      tr: 'Baharatlar ve Süper Gıdalar',
+    },
+  },
+  {
+    name: 'Organic Products',
+    slug: 'organic-products',
+    icon: 'organic',
+    type: CategoryType.SUBCATEGORY,
+    parentSlug: 'food-natural',
+    translations: {
+      mk: 'Органски производи',
+      sq: 'Produkte organike',
+      tr: 'Organik Ürünler',
+    },
+  },
+
+  // ============================================
+  // SUBCATEGORIES - Health & Wellness
+  // ============================================
+  {
+    name: 'Immunity Support',
+    slug: 'immunity-support',
+    icon: 'immunity',
+    type: CategoryType.SUBCATEGORY,
+    parentSlug: 'health-wellness',
+    translations: {
+      mk: 'Поддршка на имунитет',
+      sq: 'Mbështetje e imunitetit',
+      tr: 'Bağışıklık Desteği',
+    },
+  },
+  {
+    name: 'Energy & Vitality',
+    slug: 'energy-vitality',
+    icon: 'energy',
+    type: CategoryType.SUBCATEGORY,
+    parentSlug: 'health-wellness',
+    translations: {
+      mk: 'Енергија и виталност',
+      sq: 'Energji dhe vitalitet',
+      tr: 'Enerji ve Canlılık',
+    },
+  },
+  {
+    name: 'Natural Remedies',
+    slug: 'natural-remedies',
+    icon: 'leaf',
+    type: CategoryType.SUBCATEGORY,
+    parentSlug: 'health-wellness',
+    translations: {
+      mk: 'Природни решенија',
+      sq: 'Zgjidhje natyrore',
+      tr: 'Doğal Çözümler',
     },
   },
 ];
