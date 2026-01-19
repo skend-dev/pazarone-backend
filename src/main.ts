@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import * as express from 'express';
 
 // Note: Install helmet with: npm install helmet
 // For now, using a conditional import that will work once installed
@@ -24,6 +25,11 @@ async function bootstrap() {
 
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
+
+  // Increase body size limit for file uploads (Railway Nginx compatibility)
+  // This allows up to 8 images × 3MB = 24MB + buffer = 25MB
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
   // Security: Helmet for HTTP headers protection
   // Install with: npm install helmet
