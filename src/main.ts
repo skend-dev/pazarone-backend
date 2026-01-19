@@ -19,17 +19,23 @@ try {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Configure NestJS with increased body size limit for file uploads
+  // This allows up to 8 images × 3MB = 24MB + buffer = 25MB
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: true,
+    rawBody: false,
+  });
+  
+  // Get the underlying Express instance and configure body size limits
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.use(express.json({ limit: '25mb' }));
+  expressApp.use(express.urlencoded({ limit: '25mb', extended: true }));
+  
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
-
-  // Increase body size limit for file uploads (Railway Nginx compatibility)
-  // This allows up to 8 images × 3MB = 24MB + buffer = 25MB
-  app.use(express.json({ limit: '25mb' }));
-  app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
   // Security: Helmet for HTTP headers protection
   // Install with: npm install helmet
