@@ -25,6 +25,8 @@ const sgMail = require('@sendgrid/mail');
 @Injectable()
 export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
+  private readonly replyToEmail: string;
+  private readonly frontendUrl: string;
 
   constructor(
     @InjectRepository(Invoice)
@@ -53,6 +55,22 @@ export class InvoiceService {
         'SENDGRID_API_KEY not configured. Invoice emails will not be sent.',
       );
     }
+
+    this.replyToEmail =
+      this.configService.get<string>('SENDGRID_REPLY_TO_EMAIL') ||
+      'support@pazarone.co';
+    this.frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'https://pazarone.co';
+  }
+
+  /**
+   * Generate standard email headers for better deliverability
+   */
+  private getEmailHeaders(email: string): Record<string, string> {
+    return {
+      'List-Unsubscribe': `<${this.frontendUrl}/unsubscribe?email=${encodeURIComponent(email)}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    };
   }
 
   /**
@@ -847,9 +865,11 @@ This is an automated email from PazarOne. Please do not reply to this email.
           email: fromEmail,
           name: fromName,
         },
+        replyTo: this.replyToEmail,
         subject: `Weekly Invoice ${invoice.invoiceNumber} - Payment Due ${dueDate}`,
         html,
         text,
+        headers: this.getEmailHeaders(email),
       };
 
       await sgMail.send(msg);
