@@ -27,6 +27,7 @@ export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
   private readonly replyToEmail: string;
   private readonly frontendUrl: string;
+  private readonly logoUrl: string | null;
 
   constructor(
     @InjectRepository(Invoice)
@@ -61,6 +62,8 @@ export class InvoiceService {
       'support@pazarone.co';
     this.frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'https://pazarone.co';
+    this.logoUrl =
+      this.configService.get<string>('EMAIL_LOGO_URL') || null;
   }
 
   /**
@@ -71,6 +74,37 @@ export class InvoiceService {
       'List-Unsubscribe': `<${this.frontendUrl}/unsubscribe?email=${encodeURIComponent(email)}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     };
+  }
+
+  /**
+   * Generate logo HTML for email header
+   * Logo should be optimized for email: PNG format, max 180px width, hosted on reliable CDN
+   */
+  private getLogoHtml(): string {
+    if (!this.logoUrl) {
+      return '';
+    }
+    return `
+      <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+        <a href="${this.frontendUrl}" style="display: inline-block; text-decoration: none;">
+          <img src="${this.logoUrl}" alt="PazarOne" style="max-width: 180px; height: auto; display: block; margin: 0 auto; border: 0;" />
+        </a>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate improved footer with business identity and reason for email
+   */
+  private getEmailFooter(): string {
+    return `
+      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 13px; line-height: 1.8;">
+        <p style="margin: 0 0 8px 0;"><strong>PazarOne</strong></p>
+        <p style="margin: 0 0 8px 0;">Official platform: <a href="${this.frontendUrl}" style="color: #3498db; text-decoration: none;">${this.frontendUrl}</a></p>
+        <p style="margin: 0 0 8px 0;">Support: <a href="mailto:${this.replyToEmail}" style="color: #3498db; text-decoration: none;">${this.replyToEmail}</a></p>
+        <p style="margin: 8px 0 0 0; color: #999; font-size: 12px;">You received this email because you are a seller on PazarOne.</p>
+      </div>
+    `;
   }
 
   /**
@@ -712,6 +746,7 @@ export class InvoiceService {
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+            ${this.getLogoHtml()}
             <h1 style="color: #2c3e50; margin-top: 0;">Weekly Invoice</h1>
             <p style="margin: 5px 0;"><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</p>
             <p style="margin: 5px 0;"><strong>Week Period:</strong> ${weekStartDate} - ${weekEndDate}</p>
@@ -740,10 +775,7 @@ export class InvoiceService {
             <p style="margin: 10px 0 0 0;"><a href="${frontendUrl}/en/seller/invoices" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Invoice</a></p>
           </div>
 
-          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #6c757d; font-size: 0.9em;">
-            <p>This is an automated email from PazarOne. Please do not reply to this email.</p>
-            <p>If you have any questions, please contact our support team through your seller dashboard.</p>
-          </div>
+          ${this.getEmailFooter()}
         </body>
         </html>
       `;
@@ -856,7 +888,8 @@ Please ensure payment is received by the due date. Late payments may result in a
 To view your invoice and make payment, please log in to your seller dashboard:
 ${frontendUrl}/en/seller/invoices
 
-This is an automated email from PazarOne. Please do not reply to this email.
+You received this email because you are a seller on PazarOne.
+Support: ${this.replyToEmail}
       `.trim();
 
       const msg = {

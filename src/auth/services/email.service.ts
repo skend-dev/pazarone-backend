@@ -11,6 +11,7 @@ export class EmailService {
   private readonly fromName: string;
   private readonly replyToEmail: string;
   private readonly frontendUrl: string;
+  private readonly logoUrl: string | null;
 
   constructor(private configService: ConfigService) {
     const apiKey = this.configService.get<string>('SENDGRID_API_KEY');
@@ -32,6 +33,8 @@ export class EmailService {
       'support@pazarone.co';
     this.frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'https://pazarone.co';
+    this.logoUrl =
+      this.configService.get<string>('EMAIL_LOGO_URL') || null;
   }
 
   /**
@@ -44,6 +47,37 @@ export class EmailService {
     };
   }
 
+  /**
+   * Generate logo HTML for email header
+   * Logo should be optimized for email: PNG format, max 180px width, hosted on reliable CDN
+   */
+  private getLogoHtml(): string {
+    if (!this.logoUrl) {
+      return '';
+    }
+    return `
+      <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+        <a href="${this.frontendUrl}" style="display: inline-block; text-decoration: none;">
+          <img src="${this.logoUrl}" alt="PazarOne" style="max-width: 180px; height: auto; display: block; margin: 0 auto; border: 0;" />
+        </a>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate improved footer with business identity and reason for email
+   */
+  private getEmailFooter(reason: string): string {
+    return `
+      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 13px; line-height: 1.8;">
+        <p style="margin: 0 0 8px 0;"><strong>PazarOne</strong></p>
+        <p style="margin: 0 0 8px 0;">Official platform: <a href="${this.frontendUrl}" style="color: #3498db; text-decoration: none;">${this.frontendUrl}</a></p>
+        <p style="margin: 0 0 8px 0;">Support: <a href="mailto:${this.replyToEmail}" style="color: #3498db; text-decoration: none;">${this.replyToEmail}</a></p>
+        <p style="margin: 8px 0 0 0; color: #999; font-size: 12px;">You received this email because ${reason}.</p>
+      </div>
+    `;
+  }
+
   async sendVerificationCode(email: string, code: string): Promise<void> {
     const msg = {
       to: email,
@@ -54,7 +88,15 @@ export class EmailService {
       replyTo: this.replyToEmail,
       subject: 'Verify your email - PazarOne',
       html: this.getVerificationCodeEmailTemplate(code),
-      text: `Your verification code is: ${code}\n\nThis code will expire in 10 minutes.`,
+      text: `PazarOne – Email Verification
+
+Your verification code is: ${code}
+
+This code expires in 10 minutes.
+
+You received this email because you signed up on PazarOne.
+If this wasn't you, ignore this message.
+Support: ${this.replyToEmail}`,
       headers: this.getEmailHeaders(email),
     };
 
@@ -80,7 +122,16 @@ export class EmailService {
       replyTo: this.replyToEmail,
       subject: 'Verify your email - PazarOne',
       html: this.getVerificationLinkEmailTemplate(verificationLink),
-      text: `Click this link to verify your email: ${verificationLink}`,
+      text: `PazarOne – Email Verification
+
+Click this link to verify your email:
+${verificationLink}
+
+This link expires in 24 hours.
+
+You received this email because you signed up on PazarOne.
+If this wasn't you, ignore this message.
+Support: ${this.replyToEmail}`,
       headers: this.getEmailHeaders(email),
     };
 
@@ -106,7 +157,15 @@ export class EmailService {
       replyTo: this.replyToEmail,
       subject: 'Verify Your Payment Method - PazarOne',
       html: this.getPaymentMethodVerificationCodeEmailTemplate(code),
-      text: `Your payment method verification code is: ${code}\n\nThis code will expire in 10 minutes.`,
+      text: `PazarOne – Payment Method Verification
+
+Your payment method verification code is: ${code}
+
+This code expires in 10 minutes.
+
+You received this email because you added a payment method on PazarOne.
+If this wasn't you, ignore this message.
+Support: ${this.replyToEmail}`,
       headers: this.getEmailHeaders(email),
     };
 
@@ -131,16 +190,16 @@ export class EmailService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
-            <h1 style="color: #2c3e50; margin-top: 0;">Verify Your Email</h1>
-            <p>Thank you for using PazarOne! Please use the following code to verify your email address:</p>
-            <div style="background-color: #fff; border: 2px dashed #3498db; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-              <h2 style="color: #3498db; font-size: 32px; letter-spacing: 8px; margin: 0;">${code}</h2>
+          <div style="padding: 20px;">
+            ${this.getLogoHtml()}
+            <h1 style="color: #2c3e50; margin-top: 0; font-size: 24px;">Verify Your Email</h1>
+            <p>Please use the following code to verify your email address:</p>
+            <div style="background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 20px; text-align: center; margin: 20px 0;">
+              <div style="color: #2c3e50; font-size: 28px; letter-spacing: 6px; margin: 0; font-weight: 600;">${code}</div>
             </div>
-            <p style="color: #7f8c8d; font-size: 14px;">This code will expire in 10 minutes.</p>
-            <p style="color: #7f8c8d; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            <p style="color: #666; font-size: 14px;">This code expires in 10 minutes.</p>
+            <p style="color: #666; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
+            ${this.getEmailFooter('you signed up on PazarOne')}
           </div>
         </body>
       </html>
@@ -156,18 +215,18 @@ export class EmailService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
-            <h1 style="color: #2c3e50; margin-top: 0;">Verify Your Email</h1>
-            <p>Thank you for using PazarOne! Please click the button below to verify your email address:</p>
+          <div style="padding: 20px;">
+            ${this.getLogoHtml()}
+            <h1 style="color: #2c3e50; margin-top: 0; font-size: 24px;">Verify Your Email</h1>
+            <p>Please click the button below to verify your email address:</p>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${link}" style="background-color: #3498db; color: #fff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Verify Email</a>
+              <a href="${link}" style="background-color: #3498db; color: #fff; padding: 12px 30px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: 500;">Verify Email</a>
             </div>
-            <p style="color: #7f8c8d; font-size: 14px;">Or copy and paste this link into your browser:</p>
-            <p style="color: #7f8c8d; font-size: 12px; word-break: break-all;">${link}</p>
-            <p style="color: #7f8c8d; font-size: 14px;">This link will expire in 24 hours.</p>
-            <p style="color: #7f8c8d; font-size: 14px;">If you didn't request this verification, please ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
+            <p style="color: #666; font-size: 12px; word-break: break-all; background-color: #f5f5f5; padding: 10px; border-radius: 4px;">${link}</p>
+            <p style="color: #666; font-size: 14px;">This link expires in 24 hours.</p>
+            <p style="color: #666; font-size: 14px;">If you didn't request this verification, please ignore this email.</p>
+            ${this.getEmailFooter('you signed up on PazarOne')}
           </div>
         </body>
       </html>
@@ -196,7 +255,19 @@ export class EmailService {
         totalAmount,
         items,
       ),
-      text: `Your order ${orderNumber} has been confirmed. Total: ${totalAmount} MKD`,
+      text: `PazarOne – Order Confirmation
+
+Your order ${orderNumber} has been confirmed.
+
+Order Details:
+${items.map(item => `- ${item.productName} (Qty: ${item.quantity}) - ${item.price.toFixed(2)} MKD`).join('\n')}
+
+Total: ${totalAmount.toFixed(2)} MKD
+
+You will receive another email when your order ships.
+
+You received this email because you made an order on PazarOne.
+Support: ${this.replyToEmail}`,
       headers: this.getEmailHeaders(email),
     };
 
@@ -260,7 +331,18 @@ export class EmailService {
       replyTo: this.replyToEmail,
       subject: 'Reset Your Password - PazarOne',
       html: this.getPasswordResetEmailTemplate(resetLink),
-      text: `Click this link to reset your password: ${resetLink}`,
+      text: `PazarOne – Password Reset
+
+We received a request to reset your password.
+
+Click this link to reset your password:
+${resetLink}
+
+This link expires in 1 hour.
+
+You received this email because a password reset was requested for your account.
+If you didn't request this, ignore this message.
+Support: ${this.replyToEmail}`,
       headers: this.getEmailHeaders(email),
     };
 
@@ -294,7 +376,15 @@ export class EmailService {
         type,
         explanation,
       ),
-      text: `Your order ${orderNumber} has been ${type}${explanation ? `. Reason: ${explanation}` : ''}`,
+      text: `PazarOne – Order ${type === 'cancelled' ? 'Cancellation' : 'Return'}
+
+Your order ${orderNumber} has been ${type}.
+${explanation ? `Reason: ${explanation}` : ''}
+
+If you have any questions, please contact our support team.
+
+You received this email because you made an order on PazarOne.
+Support: ${this.replyToEmail}`,
     };
 
     try {
@@ -318,7 +408,16 @@ export class EmailService {
       replyTo: this.replyToEmail,
       subject: 'Password Changed Successfully - PazarOne',
       html: this.getPasswordChangeConfirmationEmailTemplate(),
-      text: 'Your password has been changed successfully. If you did not make this change, please contact support immediately.',
+      text: `PazarOne – Password Changed
+
+Your password has been changed successfully.
+
+Date: ${new Date().toLocaleString()}
+
+If you did not make this change, please contact our support team.
+Support: ${this.replyToEmail}
+
+You received this email because your password was changed on PazarOne.`,
       headers: this.getEmailHeaders(email),
     };
 
@@ -396,6 +495,7 @@ export class EmailService {
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+            ${this.getLogoHtml()}
             <h1 style="color: #27ae60; margin-top: 0;">Order Confirmed!</h1>
             <p>Thank you for your order! We've received your order and will process it shortly.</p>
             <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -420,8 +520,7 @@ export class EmailService {
               </table>
             </div>
             <p>You will receive another email when your order ships.</p>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            ${this.getEmailFooter('you made an order on PazarOne')}
           </div>
         </body>
       </html>
@@ -448,6 +547,7 @@ export class EmailService {
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+            ${this.getLogoHtml()}
             <h1 style="color: ${isDelivered ? '#27ae60' : '#3498db'}; margin-top: 0;">${title}</h1>
             <p>${message}</p>
             <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -455,8 +555,7 @@ export class EmailService {
               ${trackingId ? `<p><strong>Tracking ID:</strong> ${trackingId}</p>` : ''}
             </div>
             ${isDelivered ? '<p>Thank you for shopping with PazarOne!</p>' : '<p>You can track your order using the tracking ID above.</p>'}
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            ${this.getEmailFooter('you made an order on PazarOne')}
           </div>
         </body>
       </html>
@@ -472,18 +571,18 @@ export class EmailService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
-            <h1 style="color: #2c3e50; margin-top: 0;">Reset Your Password</h1>
+          <div style="padding: 20px;">
+            ${this.getLogoHtml()}
+            <h1 style="color: #2c3e50; margin-top: 0; font-size: 24px;">Reset Your Password</h1>
             <p>We received a request to reset your password. Click the button below to create a new password:</p>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetLink}" style="background-color: #e74c3c; color: #fff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Reset Password</a>
+              <a href="${resetLink}" style="background-color: #3498db; color: #fff; padding: 12px 30px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: 500;">Reset Password</a>
             </div>
-            <p style="color: #7f8c8d; font-size: 14px;">Or copy and paste this link into your browser:</p>
-            <p style="color: #7f8c8d; font-size: 12px; word-break: break-all;">${resetLink}</p>
-            <p style="color: #7f8c8d; font-size: 14px;">This link will expire in 1 hour.</p>
-            <p style="color: #7f8c8d; font-size: 14px;">If you didn't request a password reset, please ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
+            <p style="color: #666; font-size: 12px; word-break: break-all; background-color: #f5f5f5; padding: 10px; border-radius: 4px;">${resetLink}</p>
+            <p style="color: #666; font-size: 14px;">This link expires in 1 hour.</p>
+            <p style="color: #666; font-size: 14px;">If you didn't request a password reset, please ignore this email.</p>
+            ${this.getEmailFooter('a password reset was requested for your account')}
           </div>
         </body>
       </html>
@@ -510,6 +609,7 @@ export class EmailService {
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+            ${this.getLogoHtml()}
             <h1 style="color: #e74c3c; margin-top: 0;">${title}</h1>
             <p>${message}</p>
             <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -517,8 +617,7 @@ export class EmailService {
               ${explanation ? `<p><strong>Reason:</strong> ${explanation}</p>` : ''}
             </div>
             <p>If you have any questions, please contact our support team.</p>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            ${this.getEmailFooter('you made an order on PazarOne')}
           </div>
         </body>
       </html>
@@ -544,6 +643,7 @@ export class EmailService {
           </head>
           <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+              ${this.getLogoHtml()}
               <h1 style="color: #27ae60; margin-top: 0;">New Order Received!</h1>
               <p>You have received a new order on PazarOne.</p>
               <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -567,14 +667,14 @@ export class EmailService {
           </head>
           <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+              ${this.getLogoHtml()}
               <h1 style="color: #27ae60; margin-top: 0;">Product Approved!</h1>
               <p>Your product has been approved and is now live on PazarOne.</p>
               <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 <p><strong>Product:</strong> ${data.productName}</p>
               </div>
               <p>Your product is now visible to customers and ready for sale.</p>
-              <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-              <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+              ${this.getEmailFooter('you are a seller on PazarOne')}
             </div>
           </body>
         </html>
@@ -589,6 +689,7 @@ export class EmailService {
           </head>
           <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+              ${this.getLogoHtml()}
               <h1 style="color: #e74c3c; margin-top: 0;">Product Rejected</h1>
               <p>Your product has been rejected and requires review.</p>
               <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -596,8 +697,7 @@ export class EmailService {
                 ${data.rejectionMessage ? `<p><strong>Reason:</strong> ${data.rejectionMessage}</p>` : ''}
               </div>
               <p>Please review the feedback and update your product accordingly.</p>
-              <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-              <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+              ${this.getEmailFooter('you are a seller on PazarOne')}
             </div>
           </body>
         </html>
@@ -615,11 +715,36 @@ export class EmailService {
     },
   ): string {
     if (type === 'new_order') {
-      return `New order received: ${data.orderNumber}. Total: ${data.totalAmount?.toFixed(2)} MKD`;
+      return `PazarOne – New Order
+
+You have received a new order on PazarOne.
+
+Order Number: ${data.orderNumber}
+Total Amount: ${data.totalAmount?.toFixed(2)} MKD
+
+Please log in to your seller dashboard to process this order.
+
+You received this email because you are a seller on PazarOne.
+Support: ${this.replyToEmail}`;
     } else if (type === 'product_approved') {
-      return `Product "${data.productName}" has been approved and is now live.`;
+      return `PazarOne – Product Approved
+
+Your product "${data.productName}" has been approved and is now live on PazarOne.
+
+Your product is now visible to customers and ready for sale.
+
+You received this email because you are a seller on PazarOne.
+Support: ${this.replyToEmail}`;
     } else {
-      return `Product "${data.productName}" has been rejected.${data.rejectionMessage ? ` Reason: ${data.rejectionMessage}` : ''}`;
+      return `PazarOne – Product Rejected
+
+Your product "${data.productName}" has been rejected and requires review.
+${data.rejectionMessage ? `Reason: ${data.rejectionMessage}` : ''}
+
+Please review the feedback and update your product accordingly.
+
+You received this email because you are a seller on PazarOne.
+Support: ${this.replyToEmail}`;
     }
   }
 
@@ -633,20 +758,20 @@ export class EmailService {
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+            ${this.getLogoHtml()}
             <h1 style="color: #27ae60; margin-top: 0;">Password Changed Successfully</h1>
             <p>Your password has been changed successfully.</p>
             <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #27ae60;">
               <p style="margin: 0;"><strong>Date:</strong> ${new Date().toLocaleString()}</p>
             </div>
-            <p style="color: #e74c3c; font-weight: bold;">If you did not make this change, please contact our support team immediately.</p>
-            <p style="color: #7f8c8d; font-size: 14px;">For security reasons, if you did not change your password, we recommend:</p>
-            <ul style="color: #7f8c8d; font-size: 14px;">
+            <p style="color: #666; font-size: 14px;">If you did not make this change, please contact our support team.</p>
+            <p style="color: #666; font-size: 14px;">For security reasons, if you did not change your password, we recommend:</p>
+            <ul style="color: #666; font-size: 14px;">
               <li>Changing your password again</li>
               <li>Reviewing your account activity</li>
               <li>Contacting support if you notice any suspicious activity</li>
             </ul>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            ${this.getEmailFooter('your password was changed on PazarOne')}
           </div>
         </body>
       </html>
@@ -662,16 +787,16 @@ export class EmailService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
-            <h1 style="color: #2c3e50; margin-top: 0;">Verify Your Payment Method</h1>
+          <div style="padding: 20px;">
+            ${this.getLogoHtml()}
+            <h1 style="color: #2c3e50; margin-top: 0; font-size: 24px;">Verify Your Payment Method</h1>
             <p>Please use the following code to verify your payment method:</p>
-            <div style="background-color: #fff; border: 2px dashed #3498db; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-              <h2 style="color: #3498db; font-size: 32px; letter-spacing: 8px; margin: 0;">${code}</h2>
+            <div style="background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 20px; text-align: center; margin: 20px 0;">
+              <div style="color: #2c3e50; font-size: 28px; letter-spacing: 6px; margin: 0; font-weight: 600;">${code}</div>
             </div>
-            <p style="color: #7f8c8d; font-size: 14px;">This code will expire in 10 minutes.</p>
-            <p style="color: #7f8c8d; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
-            <p style="color: #95a5a6; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} PazarOne. All rights reserved.</p>
+            <p style="color: #666; font-size: 14px;">This code expires in 10 minutes.</p>
+            <p style="color: #666; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
+            ${this.getEmailFooter('you added a payment method on PazarOne')}
           </div>
         </body>
       </html>
