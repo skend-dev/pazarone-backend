@@ -92,6 +92,10 @@ class EnvironmentVariables {
   @IsOptional()
   SENDGRID_FROM_NAME: string = 'PazarOne';
 
+  @IsString()
+  @IsOptional()
+  SENDGRID_REPLY_TO_EMAIL: string = 'support@pazarone.co';
+
   // Cloudinary
   @IsString()
   @IsOptional()
@@ -144,6 +148,7 @@ export function validate(config: Record<string, unknown>) {
     'SENDGRID_API_KEY',
     'SENDGRID_FROM_EMAIL',
     'SENDGRID_FROM_NAME',
+    'SENDGRID_REPLY_TO_EMAIL',
     'CLOUDINARY_CLOUD_NAME',
     'CLOUDINARY_API_KEY',
     'CLOUDINARY_API_SECRET',

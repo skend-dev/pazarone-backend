@@ -9,6 +9,8 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly fromEmail: string;
   private readonly fromName: string;
+  private readonly replyToEmail: string;
+  private readonly frontendUrl: string;
 
   constructor(private configService: ConfigService) {
     const apiKey = this.configService.get<string>('SENDGRID_API_KEY');
@@ -25,6 +27,21 @@ export class EmailService {
       'noreply@pazarone.co';
     this.fromName =
       this.configService.get<string>('SENDGRID_FROM_NAME') || 'PazarOne';
+    this.replyToEmail =
+      this.configService.get<string>('SENDGRID_REPLY_TO_EMAIL') ||
+      'support@pazarone.co';
+    this.frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'https://pazarone.co';
+  }
+
+  /**
+   * Generate standard email headers for better deliverability
+   */
+  private getEmailHeaders(email: string): Record<string, string> {
+    return {
+      'List-Unsubscribe': `<${this.frontendUrl}/unsubscribe?email=${encodeURIComponent(email)}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    };
   }
 
   async sendVerificationCode(email: string, code: string): Promise<void> {
@@ -34,9 +51,11 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject: 'Verify your email - PazarOne',
       html: this.getVerificationCodeEmailTemplate(code),
       text: `Your verification code is: ${code}\n\nThis code will expire in 10 minutes.`,
+      headers: this.getEmailHeaders(email),
     };
 
     try {
@@ -58,9 +77,11 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject: 'Verify your email - PazarOne',
       html: this.getVerificationLinkEmailTemplate(verificationLink),
       text: `Click this link to verify your email: ${verificationLink}`,
+      headers: this.getEmailHeaders(email),
     };
 
     try {
@@ -82,9 +103,11 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject: 'Verify Your Payment Method - PazarOne',
       html: this.getPaymentMethodVerificationCodeEmailTemplate(code),
       text: `Your payment method verification code is: ${code}\n\nThis code will expire in 10 minutes.`,
+      headers: this.getEmailHeaders(email),
     };
 
     try {
@@ -166,6 +189,7 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject: `Order Confirmation - ${orderNumber}`,
       html: this.getOrderConfirmationEmailTemplate(
         orderNumber,
@@ -173,6 +197,7 @@ export class EmailService {
         items,
       ),
       text: `Your order ${orderNumber} has been confirmed. Total: ${totalAmount} MKD`,
+      headers: this.getEmailHeaders(email),
     };
 
     try {
@@ -232,9 +257,11 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject: 'Reset Your Password - PazarOne',
       html: this.getPasswordResetEmailTemplate(resetLink),
       text: `Click this link to reset your password: ${resetLink}`,
+      headers: this.getEmailHeaders(email),
     };
 
     try {
@@ -288,9 +315,11 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject: 'Password Changed Successfully - PazarOne',
       html: this.getPasswordChangeConfirmationEmailTemplate(),
       text: 'Your password has been changed successfully. If you did not make this change, please contact support immediately.',
+      headers: this.getEmailHeaders(email),
     };
 
     try {
@@ -324,6 +353,7 @@ export class EmailService {
         email: this.fromEmail,
         name: this.fromName,
       },
+      replyTo: this.replyToEmail,
       subject:
         type === 'new_order'
           ? `New Order Received - ${data.orderNumber}`
@@ -332,6 +362,7 @@ export class EmailService {
             : `Product Rejected - ${data.productName}`,
       html: this.getSellerNotificationEmailTemplate(type, data),
       text: this.getSellerNotificationText(type, data),
+      headers: this.getEmailHeaders(email),
     };
 
     try {
