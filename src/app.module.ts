@@ -90,7 +90,11 @@ import { InvoiceItem } from './invoice/entities/invoice-item.entity';
           InvoiceItem,
         ],
         synchronize: false, // Always false - use migrations in production
-        logging: configService.get<string>('NODE_ENV') === 'development',
+        // Only log errors in development, disable query logging for cleaner output
+        logging:
+          configService.get<string>('NODE_ENV') === 'development'
+            ? ['error', 'warn']
+            : false,
       }),
       inject: [ConfigService],
     }),

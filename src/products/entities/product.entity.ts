@@ -67,8 +67,8 @@ export class Product {
   @Column({ type: 'varchar', unique: true, nullable: true })
   sku: string | null;
 
-  @Column('simple-array', { nullable: true })
-  images: string[];
+  @Column('jsonb', { nullable: true })
+  images: string[] | null; // Array of Cloudinary URLs
 
   @Column('decimal', { precision: 5, scale: 2, default: 0 })
   affiliateCommission: number;

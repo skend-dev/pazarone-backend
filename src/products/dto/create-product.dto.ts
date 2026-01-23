@@ -10,6 +10,7 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   ValidateNested,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -70,18 +71,17 @@ export class CreateProductDto {
 
   @ApiProperty({
     description:
-      'Product images (array of Cloudinary URLs). Upload images first using POST /api/upload/images endpoint. Minimum 1, maximum 8 images required.',
+      'Product images (array of Cloudinary URLs). Upload images directly to Cloudinary using signed uploads (GET /api/cloudinary/sign for signature). Minimum 1, maximum 8 images required.',
     type: [String],
     example: [
-      'https://res.cloudinary.com/.../image1.jpg',
-      'https://res.cloudinary.com/.../image2.jpg',
+      'https://res.cloudinary.com/cloud-name/image/upload/v123/product1.jpg',
+      'https://res.cloudinary.com/cloud-name/image/upload/v123/product2.jpg',
     ],
     minItems: 1,
     maxItems: 8,
   })
   @IsArray()
-  @IsString({ each: true })
-  @IsNotEmpty()
+  @IsUrl({}, { each: true, message: 'Each image must be a valid URL' })
   @ArrayMinSize(1, { message: 'At least 1 image is required' })
   @ArrayMaxSize(8, { message: 'Maximum 8 images allowed' })
   images: string[];
