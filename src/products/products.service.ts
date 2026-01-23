@@ -27,6 +27,49 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class ProductsService {
+  /**
+   * Normalize product images to always return a string array
+   * Handles legacy formats (objects, null, JSON strings, etc.)
+   */
+  private normalizeImages(images: any): string[] {
+    if (!images) {
+      return [];
+    }
+    
+    // Handle JSON string (common with jsonb columns that return as strings)
+    if (typeof images === 'string') {
+      try {
+        const parsed = JSON.parse(images);
+        if (Array.isArray(parsed)) {
+          images = parsed;
+        } else {
+          return [];
+        }
+      } catch (error) {
+        // If it's not valid JSON, treat as a single URL string
+        if (images.startsWith('http')) {
+          return [images];
+        }
+        return [];
+      }
+    }
+    
+    if (!Array.isArray(images)) {
+      return [];
+    }
+    
+    return images
+      .map((img: any) => {
+        if (typeof img === 'string') {
+          return img;
+        } else if (img && typeof img === 'object' && img !== null && 'url' in img) {
+          return (img as { url: string }).url;
+        }
+        return null;
+      })
+      .filter((url): url is string => url !== null && typeof url === 'string');
+  }
+
   constructor(
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
@@ -533,8 +576,18 @@ export class ProductsService {
 
     // Handle image cleanup if images are being updated
     if (updateProductDto.images !== undefined) {
-      const oldImages = product.images || [];
+      // Normalize oldImages using helper function (always returns array)
+      const oldImages = this.normalizeImages(product.images);
+      
+      
       const newImages = updateProductDto.images;
+      
+      // Validate newImages is an array
+      if (!Array.isArray(newImages)) {
+        throw new BadRequestException('Images must be an array');
+      }
+      
+      // Find images that are being removed (old images not in new array)
       const imagesToDelete = oldImages.filter(
         (oldUrl) => !newImages.includes(oldUrl),
       );
@@ -638,38 +691,52 @@ export class ProductsService {
     if (orderItemsCount > 0) {
       // Product has orders - soft delete by setting status to INACTIVE
       // This preserves order history while effectively removing the product from the store
-      // Keep images in case of order history needs them
       product.status = ProductStatus.INACTIVE;
       await this.productsRepository.save(product);
     } else {
       // No orders - safe to hard delete
-      // Delete images from Cloudinary before removing product
-      if (product.images && product.images.length > 0) {
+      // Delete all images from Cloudinary before removing product
+      
+      // Collect all images to delete (product images + variant images)
+      const allImagesToDelete: string[] = [];
+      
+      // Add product images
+      const productImages = this.normalizeImages(product.images);
+      allImagesToDelete.push(...productImages);
+      
+      // Add variant images if product has variants
+      if (product.hasVariants && product.variants) {
+        for (const variant of product.variants) {
+          if (variant.images && Array.isArray(variant.images)) {
+            allImagesToDelete.push(...variant.images);
+          }
+        }
+      }
+      
+      // Delete all images from Cloudinary
+      if (allImagesToDelete.length > 0) {
         try {
-          console.log(`Deleting images for product ${id}. Image URLs:`, product.images);
-          
-          const publicIds = product.images
+          const publicIds = allImagesToDelete
             .map((url) => {
               const publicId = this.cloudinaryService.extractPublicIdFromUrl(url);
-              console.log(`Extracted public ID from URL ${url}:`, publicId);
+              if (!publicId) {
+                console.warn(`Could not extract public ID from URL: ${url}`);
+              }
               return publicId;
             })
-            .filter((id): id is string => id !== null);
+            .filter((id): id is string => id !== null && id !== undefined);
 
-          if (publicIds.length === 0) {
-            console.warn(`No valid public IDs extracted from product ${id} images. URLs:`, product.images);
-          } else {
-            console.log(`Deleting ${publicIds.length} images with public IDs:`, publicIds);
+          if (publicIds.length > 0) {
             await this.cloudinaryService.deleteMultipleImages(publicIds);
-            console.log(`Successfully deleted images for product ${id}`);
+          } else {
+            console.warn(
+              `No valid public IDs extracted from ${allImagesToDelete.length} image URL(s) for product ${id}`,
+            );
           }
         } catch (error) {
           // Log error but don't fail product deletion if image deletion fails
           console.error(`Failed to delete images for product ${id}:`, error);
-          console.error('Error details:', error instanceof Error ? error.stack : error);
         }
-      } else {
-        console.log(`Product ${id} has no images to delete`);
       }
 
       await this.productsRepository.remove(product);
@@ -684,8 +751,15 @@ export class ProductsService {
   ): Promise<Product> {
     const product = await this.findOne(id, sellerId, userType);
 
+    // Normalize oldImages using helper function (always returns array)
+    const oldImages = this.normalizeImages(product.images);
+    
+    // Validate images parameter is an array
+    if (!Array.isArray(images)) {
+      throw new BadRequestException('Images must be an array');
+    }
+    
     // Find images that are being removed (old images not in new array)
-    const oldImages = product.images || [];
     const imagesToDelete = oldImages.filter(
       (oldUrl) => !images.includes(oldUrl),
     );

@@ -1,6 +1,9 @@
 import {
   Controller,
   Post,
+  Get,
+  Body,
+  Query,
   UseInterceptors,
   UploadedFiles,
   UseGuards,
@@ -14,20 +17,22 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { CloudinaryService } from './cloudinary.service';
 import { MultipleUploadResponseDto } from './dto/upload-response.dto';
+import { DeleteImageDto } from './dto/delete-image.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { memoryStorage } from 'multer';
 
-@ApiTags('upload')
-@ApiBearerAuth('JWT-auth')
-@Controller('upload')
-@UseGuards(JwtAuthGuard)
+@ApiTags('cloudinary')
+@Controller('cloudinary')
 export class CloudinaryController {
   constructor(private readonly cloudinaryService: CloudinaryService) {}
 
   @Post('images')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
   @UseInterceptors(
     FilesInterceptor('images', 8, {
       storage: memoryStorage(),
@@ -105,5 +110,128 @@ export class CloudinaryController {
         bytes: result.bytes,
       })),
     };
+  }
+
+  @Get('sign')
+  // @UseGuards(JwtAuthGuard) // Optional: uncomment to require authentication (recommended)
+  // @ApiBearerAuth('JWT-auth') // Optional: uncomment if using auth guard
+  @ApiOperation({
+    summary: 'Get signed upload parameters for direct Cloudinary uploads',
+    description:
+      'Returns signature and parameters needed for client-side signed uploads to Cloudinary. The frontend can use these to upload directly to Cloudinary without proxying through the backend. Authentication is optional but recommended for security.',
+  })
+  @ApiQuery({
+    name: 'folder',
+    required: false,
+    description:
+      'Cloudinary folder path (defaults to CLOUDINARY_FOLDER env var or "products")',
+    example: 'products',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Upload signature generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        api_key: {
+          type: 'string',
+          description: 'Cloudinary API key',
+          example: '123456789012345',
+        },
+        timestamp: {
+          type: 'number',
+          description: 'Unix timestamp in seconds',
+          example: 1704067200,
+        },
+        signature: {
+          type: 'string',
+          description: 'HMAC-SHA1 signature for the upload',
+          example: 'a1b2c3d4e5f6...',
+        },
+        folder: {
+          type: 'string',
+          description: 'Target folder for uploads',
+          example: 'products',
+        },
+        cloud_name: {
+          type: 'string',
+          description: 'Cloudinary cloud name',
+          example: 'my-cloud',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - invalid parameters',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Cloudinary configuration error',
+  })
+  getUploadSignature(@Query('folder') folder?: string) {
+    try {
+      const result = this.cloudinaryService.generateUploadSignature(folder);
+      return result;
+    } catch (error) {
+      // Enhanced error message for debugging
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate upload signature';
+      
+      throw new BadRequestException(
+        errorMessage +
+          '. Please verify CLOUDINARY_API_SECRET, CLOUDINARY_API_KEY, and CLOUDINARY_CLOUD_NAME environment variables.',
+      );
+    }
+  }
+
+  @Post('delete')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Delete an image from Cloudinary',
+    description:
+      'Deletes an image from Cloudinary by public ID. Only allows deletion of images within the "pazarone/" prefix for security.',
+  })
+  @ApiBody({ type: DeleteImageDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Image deleted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Image deleted successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid public ID or public ID outside allowed prefix',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async deleteImage(@Body() deleteImageDto: DeleteImageDto) {
+    const { publicId } = deleteImageDto;
+
+    // Security: Only allow deletion of images within "pazarone/" prefix
+    if (!publicId.startsWith('pazarone/')) {
+      throw new BadRequestException(
+        'Only images within the "pazarone/" prefix can be deleted',
+      );
+    }
+
+    try {
+      await this.cloudinaryService.deleteImage(publicId);
+      return {
+        success: true,
+        message: 'Image deleted successfully',
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to delete image',
+      );
+    }
   }
 }

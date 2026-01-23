@@ -9,6 +9,7 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   ValidateNested,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -49,7 +50,7 @@ export class UpdateProductDto {
   sku?: string;
 
   @IsArray()
-  @IsString({ each: true })
+  @IsUrl({}, { each: true, message: 'Each image must be a valid URL' })
   @IsOptional()
   @ArrayMinSize(1, { message: 'At least 1 image is required' })
   @ArrayMaxSize(8, { message: 'Maximum 8 images allowed' })
