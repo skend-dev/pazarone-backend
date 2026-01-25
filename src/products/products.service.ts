@@ -676,6 +676,71 @@ export class ProductsService {
     });
   }
 
+  /**
+   * Helper method to collect and delete all images associated with a product
+   * This includes product images and variant images
+   */
+  private async deleteProductImages(product: Product): Promise<void> {
+    // Collect all images to delete (product images + variant images)
+    const allImagesToDelete: string[] = [];
+    
+    // Add product images
+    const productImages = this.normalizeImages(product.images);
+    allImagesToDelete.push(...productImages);
+    
+    // Add variant images if product has variants
+    // Load variants if not already loaded
+    if (product.hasVariants) {
+      const productWithVariants = await this.productsRepository.findOne({
+        where: { id: product.id },
+        relations: ['variants'],
+      });
+      
+      if (productWithVariants?.variants) {
+        for (const variant of productWithVariants.variants) {
+          if (variant.images && Array.isArray(variant.images)) {
+            allImagesToDelete.push(...variant.images);
+          }
+        }
+      }
+    }
+    
+    // Delete all images from Cloudinary
+    if (allImagesToDelete.length > 0) {
+      try {
+        const publicIds = allImagesToDelete
+          .map((url) => {
+            const publicId = this.cloudinaryService.extractPublicIdFromUrl(url);
+            if (!publicId) {
+              console.warn(`Could not extract public ID from URL: ${url}`);
+            }
+            return publicId;
+          })
+          .filter((id): id is string => id !== null && id !== undefined);
+
+        if (publicIds.length > 0) {
+          await this.cloudinaryService.deleteMultipleImages(publicIds);
+          console.log(
+            `Successfully deleted ${publicIds.length} image(s) for product ${product.id}`,
+          );
+        } else {
+          console.warn(
+            `No valid public IDs extracted from ${allImagesToDelete.length} image URL(s) for product ${product.id}`,
+          );
+        }
+      } catch (error) {
+        // Log error but don't fail product deletion if image deletion fails
+        // This ensures product deletion can proceed even if Cloudinary is temporarily unavailable
+        console.error(
+          `Failed to delete images for product ${product.id}:`,
+          error,
+        );
+        // Re-throw if it's a critical error that should prevent deletion
+        // For now, we'll continue with deletion to avoid blocking the operation
+      }
+    }
+  }
+
   async remove(
     id: string,
     sellerId: string,
@@ -691,53 +756,33 @@ export class ProductsService {
     if (orderItemsCount > 0) {
       // Product has orders - soft delete by setting status to INACTIVE
       // This preserves order history while effectively removing the product from the store
+      // However, we should still delete images to free up storage space
+      // Images are no longer needed since the product is inactive
+      await this.deleteProductImages(product);
+      
       product.status = ProductStatus.INACTIVE;
+      // Clear images array to prevent orphaned references
+      product.images = [];
       await this.productsRepository.save(product);
+      
+      // Also clear variant images
+      if (product.hasVariants) {
+        const productWithVariants = await this.productsRepository.findOne({
+          where: { id: product.id },
+          relations: ['variants'],
+        });
+        
+        if (productWithVariants?.variants) {
+          for (const variant of productWithVariants.variants) {
+            variant.images = [];
+          }
+          await this.variantRepository.save(productWithVariants.variants);
+        }
+      }
     } else {
       // No orders - safe to hard delete
       // Delete all images from Cloudinary before removing product
-      
-      // Collect all images to delete (product images + variant images)
-      const allImagesToDelete: string[] = [];
-      
-      // Add product images
-      const productImages = this.normalizeImages(product.images);
-      allImagesToDelete.push(...productImages);
-      
-      // Add variant images if product has variants
-      if (product.hasVariants && product.variants) {
-        for (const variant of product.variants) {
-          if (variant.images && Array.isArray(variant.images)) {
-            allImagesToDelete.push(...variant.images);
-          }
-        }
-      }
-      
-      // Delete all images from Cloudinary
-      if (allImagesToDelete.length > 0) {
-        try {
-          const publicIds = allImagesToDelete
-            .map((url) => {
-              const publicId = this.cloudinaryService.extractPublicIdFromUrl(url);
-              if (!publicId) {
-                console.warn(`Could not extract public ID from URL: ${url}`);
-              }
-              return publicId;
-            })
-            .filter((id): id is string => id !== null && id !== undefined);
-
-          if (publicIds.length > 0) {
-            await this.cloudinaryService.deleteMultipleImages(publicIds);
-          } else {
-            console.warn(
-              `No valid public IDs extracted from ${allImagesToDelete.length} image URL(s) for product ${id}`,
-            );
-          }
-        } catch (error) {
-          // Log error but don't fail product deletion if image deletion fails
-          console.error(`Failed to delete images for product ${id}:`, error);
-        }
-      }
+      await this.deleteProductImages(product);
 
       await this.productsRepository.remove(product);
     }
@@ -880,7 +925,7 @@ export class ProductsService {
       });
     }
 
-    // Map products to include storeName from sellerSettings
+    // Map products to include storeName from sellerSettings and profile link
     const productsWithStore = products.map((product) => {
       const sellerSettings = sellerSettingsMap.get(product.sellerId);
       return {
@@ -889,6 +934,7 @@ export class ProductsService {
           ...product.seller,
           storeName: sellerSettings?.storeName || null,
           storeLogo: sellerSettings?.logo || null,
+          profileUrl: `/seller/${product.sellerId}/profile`,
         },
       };
     });
@@ -946,6 +992,7 @@ export class ProductsService {
         ...updatedProduct!.seller,
         storeName: sellerSettings?.storeName || null,
         storeLogo: sellerSettings?.logo || null,
+        profileUrl: `/seller/${updatedProduct!.sellerId}/profile`,
       },
     } as Product;
   }

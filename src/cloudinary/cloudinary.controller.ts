@@ -76,7 +76,7 @@ export class CloudinaryController {
   })
   @ApiResponse({
     status: 201,
-    description: 'Images uploaded successfully',
+    description: 'Images uploaded successfully (may include partial failures)',
     type: MultipleUploadResponseDto,
   })
   @ApiResponse({
@@ -96,13 +96,22 @@ export class CloudinaryController {
       throw new BadRequestException('Maximum 8 images allowed per upload');
     }
 
-    const results = await this.cloudinaryService.uploadMultipleImages(
+    const { successful, failed } = await this.cloudinaryService.uploadMultipleImages(
       files,
       'products',
     );
 
-    return {
-      images: results.map((result) => ({
+    // If all uploads failed, throw an error
+    if (successful.length === 0 && failed.length > 0) {
+      const errorMessages = failed.map((f) => f.error).join('; ');
+      throw new BadRequestException(
+        `All image uploads failed: ${errorMessages}`,
+      );
+    }
+
+    // If some uploads failed, include them in the response
+    const response: MultipleUploadResponseDto = {
+      images: successful.map((result) => ({
         url: result.secure_url,
         publicId: result.public_id,
         width: result.width,
@@ -110,6 +119,16 @@ export class CloudinaryController {
         bytes: result.bytes,
       })),
     };
+
+    // Include errors if any uploads failed
+    if (failed.length > 0) {
+      (response as any).errors = failed.map((f) => ({
+        fileName: f.file.originalname,
+        error: f.error,
+      }));
+    }
+
+    return response;
   }
 
   @Get('sign')

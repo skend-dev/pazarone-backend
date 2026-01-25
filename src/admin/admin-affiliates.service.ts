@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { User, UserType } from '../users/entities/user.entity';
@@ -15,7 +19,6 @@ import { AffiliatePaymentMethod } from '../affiliate/entities/affiliate-payment-
 import { AdminQueryDto } from './dto/admin-query.dto';
 import { VerifyPaymentMethodDto } from './dto/verify-payment-method.dto';
 import { RejectPaymentMethodDto } from './dto/reject-payment-method.dto';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 @Injectable()
 export class AdminAffiliatesService {

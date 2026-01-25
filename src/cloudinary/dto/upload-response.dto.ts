@@ -17,8 +17,23 @@ export class UploadResponseDto {
   bytes: number;
 }
 
+export class UploadErrorDto {
+  @ApiProperty({ description: 'File name that failed to upload', example: 'image.jpg' })
+  fileName: string;
+
+  @ApiProperty({ description: 'Error message', example: 'File exceeds maximum size of 3MB' })
+  error: string;
+}
+
 export class MultipleUploadResponseDto {
-  @ApiProperty({ type: [UploadResponseDto], description: 'Array of uploaded images' })
+  @ApiProperty({ type: [UploadResponseDto], description: 'Array of successfully uploaded images' })
   images: UploadResponseDto[];
+
+  @ApiProperty({ 
+    type: [UploadErrorDto], 
+    description: 'Array of failed uploads (if any)',
+    required: false,
+  })
+  errors?: UploadErrorDto[];
 }
 

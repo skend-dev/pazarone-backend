@@ -1,0 +1,46 @@
+# arijans_branch — Work Log
+
+Branch created from `main`. This document tracks all work done on **arijans_branch**.
+
+---
+
+## Session log
+
+### 2025-01-25
+
+| Time | Change | Details |
+|------|--------|---------|
+| — | Branch setup | Created `arijans_branch`, added worklog (`ARIJANS_BRANCH_WORKLOG.md`) |
+| — | Fix linter errors in `admin-affiliates.service` | Consolidated duplicate `@nestjs/common` imports into a single import (`Injectable`, `NotFoundException`, `BadRequestException`). Resolved "Cannot find module" linter errors for `@nestjs/common`, `@nestjs/typeorm`, `typeorm`. |
+| — | Bulk image upload: partial-failure handling | **Cloudinary:** `uploadMultipleImages` now validates each file (3MB max, image types only), collects validation errors, uploads valid files, returns `{ successful, failed }`. Per-file upload errors no longer fail the whole request. **Controller:** `POST /cloudinary/images` returns `{ images, errors? }`; 201 when any succeed; only throws if *all* fail. **DTOs:** Added `UploadErrorDto` (fileName, error), `MultipleUploadResponseDto` (images, optional errors). Files: `cloudinary.service.ts`, `cloudinary.controller.ts`, `dto/upload-response.dto.ts`. |
+| — | Seller profile link & public profile API | **New endpoint:** `GET /seller/:sellerId/profile` — returns public profile (name, storeName, storeDescription, logo, verified, market, shippingCountries), `stats` (totalProducts, activeProducts, totalViews), and `profileUrl: /seller/:sellerId/profile`. **Products API:** `GET /products` and `GET /products/:id` now include `seller.storeName`, `seller.storeLogo`, and `seller.profileUrl` in product responses. Files: `public-seller.controller.ts`, `products.service.ts`. |
+| — | Config: `package.json` & `tsconfig.json` | Added `@types/cors` ^2.8.17 in `package.json`. In `tsconfig.json`, added `"types": ["node"]` under `compilerOptions`. |
+| — | `FRONTEND_UPDATE_GUIDE.md` | New guide for frontend: (1) Bulk image upload — handle `images` + `errors` in response, validate files pre-upload, show per-file errors; (2) Seller profile — use `profileUrl`, implement `/seller/:sellerId/profile` page; (3) API changes summary and examples. |
+
+---
+
+## Files touched
+
+| File | Changes |
+|------|---------|
+| `src/admin/admin-affiliates.service.ts` | Linter fixes (imports) |
+| `src/cloudinary/cloudinary.controller.ts` | Bulk upload response with `images` + `errors`, partial-failure handling |
+| `src/cloudinary/cloudinary.service.ts` | `uploadMultipleImages`: validation, per-file errors, return successful + failed |
+| `src/cloudinary/dto/upload-response.dto.ts` | `UploadErrorDto`, `MultipleUploadResponseDto` |
+| `src/products/products.service.ts` | `storeName`, `storeLogo`, `profileUrl` on seller in product list/detail |
+| `src/seller/public-seller.controller.ts` | `GET :sellerId/profile` endpoint, profile + stats + `profileUrl` |
+| `package.json` | `@types/cors` dev dependency |
+| `tsconfig.json` | `compilerOptions.types: ["node"]` |
+| `FRONTEND_UPDATE_GUIDE.md` | New (untracked) |
+
+---
+
+## How to use this log
+
+- Add a new row for each meaningful change (feature, fix, refactor, config, etc.).
+- Keep **Change** short (e.g. "Add user export API", "Fix login timeout").
+- Use **Details** for files touched, endpoints, or brief notes.
+
+---
+
+*Last updated: 2025-01-25*

@@ -11,6 +11,7 @@ Branch created from `main`. This document tracks all work done on **arijans_bran
 | Time | Change | Details |
 |------|--------|---------|
 | — | Branch setup | Created `arijans_branch`, added this worklog (`ARIJANS_BRANCH_WORKLOG.md`) |
+| — | Fix 4 linter errors in `admin-affiliates.service` | Consolidated duplicate `@nestjs/common` imports into a single import (`Injectable`, `NotFoundException`, `BadRequestException`). Resolved "Cannot find module" linter errors for `@nestjs/common`, `@nestjs/typeorm`, `typeorm`. |
 
 ---
 

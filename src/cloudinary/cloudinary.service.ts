@@ -56,9 +56,79 @@ export class CloudinaryService {
   async uploadMultipleImages(
     files: Express.Multer.File[],
     folder: string = 'products',
-  ): Promise<(UploadApiResponse | UploadApiErrorResponse)[]> {
-    const uploadPromises = files.map((file) => this.uploadImage(file, folder));
-    return Promise.all(uploadPromises);
+  ): Promise<{
+    successful: (UploadApiResponse | UploadApiErrorResponse)[];
+    failed: Array<{ file: Express.Multer.File; error: string }>;
+  }> {
+    // Validate each file before upload
+    const validationErrors: Array<{ file: Express.Multer.File; error: string }> = [];
+    const validFiles: Express.Multer.File[] = [];
+
+    for (const file of files) {
+      // Check file size (3MB limit)
+      const maxSize = 3 * 1024 * 1024; // 3MB
+      if (file.size > maxSize) {
+        validationErrors.push({
+          file,
+          error: `File "${file.originalname}" exceeds maximum size of 3MB (${(file.size / 1024 / 1024).toFixed(2)}MB)`,
+        });
+        continue;
+      }
+
+      // Check file type
+      if (!file.mimetype.match(/^image\/(jpeg|jpg|png|gif|webp)$/)) {
+        validationErrors.push({
+          file,
+          error: `File "${file.originalname}" has invalid type "${file.mimetype}". Only image files (jpeg, jpg, png, gif, webp) are allowed.`,
+        });
+        continue;
+      }
+
+      validFiles.push(file);
+    }
+
+    // Upload valid files with individual error handling
+    const uploadPromises = validFiles.map(async (file) => {
+      try {
+        return await this.uploadImage(file, folder);
+      } catch (error) {
+        return {
+          error: true,
+          file,
+          message: error instanceof Error ? error.message : 'Upload failed',
+        };
+      }
+    });
+
+    // Use allSettled to handle individual failures gracefully
+    const results = await Promise.allSettled(uploadPromises);
+
+    const successful: (UploadApiResponse | UploadApiErrorResponse)[] = [];
+    const failed: Array<{ file: Express.Multer.File; error: string }> = [
+      ...validationErrors,
+    ];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const value = result.value;
+        // Check if it's an error object from our catch block
+        if (value && typeof value === 'object' && 'error' in value && value.error) {
+          failed.push({
+            file: validFiles[index],
+            error: value.message || 'Upload failed',
+          });
+        } else {
+          successful.push(value as UploadApiResponse | UploadApiErrorResponse);
+        }
+      } else {
+        failed.push({
+          file: validFiles[index],
+          error: result.reason?.message || 'Upload failed with unknown error',
+        });
+      }
+    });
+
+    return { successful, failed };
   }
 
   async deleteImage(publicId: string): Promise<void> {
