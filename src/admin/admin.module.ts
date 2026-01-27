@@ -23,6 +23,7 @@ import { AdminDashboardService } from './admin-dashboard.service';
 import { AdminDashboardController } from './admin-dashboard.controller';
 import { PlatformModule } from '../platform/platform.module';
 import { SellerModule } from '../seller/seller.module';
+import { ProductsModule } from '../products/products.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
 import { forwardRef } from '@nestjs/common';
@@ -31,6 +32,7 @@ import { forwardRef } from '@nestjs/common';
   imports: [
     PlatformModule,
     SellerModule,
+    forwardRef(() => ProductsModule),
     forwardRef(() => NotificationsModule),
     forwardRef(() => AuthModule),
     TypeOrmModule.forFeature([

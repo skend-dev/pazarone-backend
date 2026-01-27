@@ -19,9 +19,12 @@ import {
 import { AdminProductsService } from './admin-products.service';
 import { AdminQueryDto } from './dto/admin-query.dto';
 import { RejectProductDto } from './dto/reject-product.dto';
+import { UpdateProductDto } from '../products/dto/update-product.dto';
 import { ProductStatus } from '../products/entities/product.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { User } from '../users/entities/user.entity';
 
 @ApiTags('admin-products')
 @ApiBearerAuth('JWT-auth')
@@ -84,6 +87,25 @@ export class AdminProductsController {
     @Body() rejectProductDto: RejectProductDto,
   ) {
     return this.adminProductsService.rejectProduct(id, rejectProductDto.message);
+  }
+
+  @Put(':id')
+  @ApiOperation({
+    summary: 'Update a product',
+    description: 'Update any product (admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiBody({ type: UpdateProductDto })
+  @ApiResponse({ status: 200, description: 'Product updated successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
+  update(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() updateProductDto: UpdateProductDto,
+  ) {
+    return this.adminProductsService.update(id, updateProductDto);
   }
 
   @Get('statistics')

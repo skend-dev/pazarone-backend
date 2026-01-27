@@ -11,6 +11,7 @@ import {
   ArrayMaxSize,
   ValidateNested,
   IsUrl,
+  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -51,10 +52,43 @@ export class CreateProductDto {
   @IsOptional()
   category?: string;
 
-  @ApiProperty({ description: 'Product price', example: 149.99, minimum: 0 })
+  @ApiProperty({
+    description: 'Product price (legacy field, use regularPrice or salePrice instead)',
+    example: 149.99,
+    minimum: 0,
+  })
   @IsNumber()
   @Min(0)
-  price: number;
+  @IsOptional()
+  price?: number;
+
+  @ApiPropertyOptional({
+    description: 'Regular price of the product',
+    example: 149.99,
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  regularPrice?: number;
+
+  @ApiPropertyOptional({
+    description: 'Sale/discounted price (if product is on sale)',
+    example: 99.99,
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  salePrice?: number;
+
+  @ApiPropertyOptional({
+    description: 'Expiration date/time for the sale price (ISO 8601 format)',
+    example: '2026-12-31T23:59:59Z',
+  })
+  @IsDateString()
+  @IsOptional()
+  salePriceExpiresAt?: string;
 
   @ApiProperty({ description: 'Stock quantity', example: 45, minimum: 0 })
   @IsNumber()
