@@ -98,6 +98,7 @@ export class AdminSellersService {
           id: user.id,
           name: user.name,
           email: user.email,
+          phone: settings?.phone || null,
           storeName: settings?.storeName || null,
           storeDescription: settings?.storeDescription || null,
           accountVerified: settings?.accountVerified || false,

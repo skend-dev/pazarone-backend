@@ -9,6 +9,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product, ProductStatus } from '../products/entities/product.entity';
 import { AdminQueryDto } from './dto/admin-query.dto';
+import { UpdateProductDto } from '../products/dto/update-product.dto';
+import { ProductsService } from '../products/products.service';
+import { UserType } from '../users/entities/user.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -31,6 +34,8 @@ export class AdminProductsService {
     private notificationsGateway: NotificationsGateway,
     @Inject(forwardRef(() => EmailService))
     private emailService: EmailService,
+    @Inject(forwardRef(() => ProductsService))
+    private productsService: ProductsService,
   ) {}
 
   async findAll(
@@ -249,6 +254,28 @@ export class AdminProductsService {
     }
 
     return updatedProduct;
+  }
+
+  async update(
+    id: string,
+    updateProductDto: UpdateProductDto,
+  ): Promise<Product> {
+    // Get the product to find its sellerId
+    const product = await this.productsRepository.findOne({
+      where: { id },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    // Use ProductsService.update with ADMIN userType to bypass seller check
+    return this.productsService.update(
+      id,
+      product.sellerId,
+      updateProductDto,
+      UserType.ADMIN,
+    );
   }
 
   async getStatistics() {

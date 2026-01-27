@@ -70,6 +70,66 @@ export class ProductsService {
       .filter((url): url is string => url !== null && typeof url === 'string');
   }
 
+  /**
+   * Check if sale price is still valid (not expired)
+   */
+  private isSalePriceValid(
+    salePrice: number | null | undefined,
+    salePriceExpiresAt: Date | null | undefined,
+  ): boolean {
+    if (!salePrice) {
+      return false;
+    }
+    if (!salePriceExpiresAt) {
+      return true; // No expiration means sale is valid indefinitely
+    }
+    return new Date() < new Date(salePriceExpiresAt);
+  }
+
+  /**
+   * Get effective price considering sale price and expiration
+   */
+  private getEffectivePrice(
+    salePrice: number | null | undefined,
+    regularPrice: number | null | undefined,
+    legacyPrice: number | null | undefined,
+    salePriceExpiresAt: Date | null | undefined,
+  ): number | null {
+    // Check if sale price is valid (exists and not expired)
+    if (this.isSalePriceValid(salePrice, salePriceExpiresAt)) {
+      return salePrice!;
+    }
+    // Otherwise use regular price or legacy price
+    return regularPrice ?? legacyPrice ?? null;
+  }
+
+  /**
+   * Normalize product prices to ensure expired sale prices are handled
+   * Updates the price field to reflect the current effective price
+   */
+  private normalizeProductPrice(product: Product): Product {
+    const effectivePrice = this.getEffectivePrice(
+      product.salePrice,
+      product.regularPrice,
+      product.price,
+      product.salePriceExpiresAt,
+    );
+
+    if (effectivePrice !== null && effectivePrice !== product.price) {
+      product.price = effectivePrice;
+      product.basePrice = effectivePrice;
+    }
+
+    return product;
+  }
+
+  /**
+   * Normalize prices for an array of products
+   */
+  private normalizeProductPrices(products: Product[]): Product[] {
+    return products.map((product) => this.normalizeProductPrice(product));
+  }
+
   constructor(
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
@@ -165,12 +225,35 @@ export class ProductsService {
 
     const hasVariants = !!(variants && variants.length > 0);
 
+    // Parse salePriceExpiresAt if provided
+    const salePriceExpiresAt = createProductDto.salePriceExpiresAt
+      ? new Date(createProductDto.salePriceExpiresAt)
+      : null;
+
+    // Determine effective price: salePrice if on sale and not expired, otherwise regularPrice, fallback to price
+    const effectivePrice = this.getEffectivePrice(
+      createProductDto.salePrice,
+      createProductDto.regularPrice,
+      createProductDto.price,
+      salePriceExpiresAt,
+    );
+
+    if (!effectivePrice) {
+      throw new BadRequestException(
+        'Price, regularPrice, or salePrice must be provided',
+      );
+    }
+
     // If product has variants, stock will be calculated from variants
     // Otherwise, use the provided stock
     const product = this.productsRepository.create({
       ...productData,
       sellerId,
-      basePrice: createProductDto.price, // Set base price from provided price
+      price: effectivePrice, // Set legacy price field for backward compatibility
+      regularPrice: createProductDto.regularPrice ?? createProductDto.price ?? null,
+      salePrice: createProductDto.salePrice ?? null,
+      salePriceExpiresAt: salePriceExpiresAt,
+      basePrice: effectivePrice, // Set base price from effective price
       baseCurrency: baseCurrency as string, // Set base currency based on seller's market
       approved: isVerified, // Auto-approve if seller is verified
       status: isVerified ? ProductStatus.ACTIVE : ProductStatus.INACTIVE, // Set to inactive if not approved
@@ -246,7 +329,7 @@ export class ProductsService {
     query: ProductQueryDto,
     userType?: UserType,
   ): Promise<{ products: Product[]; pagination: any }> {
-    const { page = 1, limit = 20, status, search, category } = query;
+    const { page = 1, limit = 20, status, search, category, onSale } = query;
     const skip = (page - 1) * limit;
 
     const queryBuilder = this.productsRepository.createQueryBuilder('product');
@@ -312,6 +395,41 @@ export class ProductsService {
       }
     }
 
+    // Filter by sale status
+    if (onSale !== undefined) {
+      if (onSale === true) {
+        // Only products with active sale price (not expired)
+        if (hasWhereClause) {
+          queryBuilder.andWhere('product.salePrice IS NOT NULL')
+            .andWhere(
+              '(product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :now)',
+              { now: new Date() },
+            );
+        } else {
+          queryBuilder.where('product.salePrice IS NOT NULL')
+            .andWhere(
+              '(product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :now)',
+              { now: new Date() },
+            );
+          hasWhereClause = true;
+        }
+      } else {
+        // Only products without active sale price
+        if (hasWhereClause) {
+          queryBuilder.andWhere(
+            '(product.salePrice IS NULL OR (product.salePriceExpiresAt IS NOT NULL AND product.salePriceExpiresAt <= :now))',
+            { now: new Date() },
+          );
+        } else {
+          queryBuilder.where(
+            '(product.salePrice IS NULL OR (product.salePriceExpiresAt IS NOT NULL AND product.salePriceExpiresAt <= :now))',
+            { now: new Date() },
+          );
+          hasWhereClause = true;
+        }
+      }
+    }
+
     queryBuilder.skip(skip).take(limit).orderBy('product.createdAt', 'DESC');
 
     queryBuilder.leftJoinAndSelect('product.category', 'category');
@@ -324,8 +442,11 @@ export class ProductsService {
 
     const [products, total] = await queryBuilder.getManyAndCount();
 
+    // Normalize prices to handle expired sale prices
+    const normalizedProducts = this.normalizeProductPrices(products);
+
     return {
-      products,
+      products: normalizedProducts,
       pagination: {
         page,
         limit,
@@ -340,7 +461,7 @@ export class ProductsService {
     sellerId: string,
     userType?: UserType,
   ): Promise<Product> {
-    const product = await this.productsRepository.findOne({
+    let product = await this.productsRepository.findOne({
       where: { id },
       relations: [
         'category',
@@ -359,7 +480,8 @@ export class ProductsService {
       throw new ForbiddenException('You do not have access to this product');
     }
 
-    return product;
+    // Normalize price to handle expired sale prices
+    return this.normalizeProductPrice(product);
   }
 
   async update(
@@ -568,10 +690,46 @@ export class ProductsService {
       product.stock = stock;
     }
 
-    // If price is being updated, also update basePrice
-    if (updateProductDto.price !== undefined) {
-      product.basePrice = updateProductDto.price;
-      // baseCurrency should remain the same (determined by seller's market)
+    // Handle salePriceExpiresAt update if provided
+    if (updateProductDto.salePriceExpiresAt !== undefined) {
+      product.salePriceExpiresAt = updateProductDto.salePriceExpiresAt
+        ? new Date(updateProductDto.salePriceExpiresAt)
+        : null;
+    }
+
+    // Handle price updates (regularPrice, salePrice, or legacy price)
+    if (
+      updateProductDto.regularPrice !== undefined ||
+      updateProductDto.salePrice !== undefined ||
+      updateProductDto.price !== undefined ||
+      updateProductDto.salePriceExpiresAt !== undefined
+    ) {
+      // Update regularPrice if provided, otherwise keep existing or use price
+      if (updateProductDto.regularPrice !== undefined) {
+        product.regularPrice = updateProductDto.regularPrice;
+      } else if (updateProductDto.price !== undefined && !product.regularPrice) {
+        // If price is provided and regularPrice doesn't exist, set it
+        product.regularPrice = updateProductDto.price;
+      }
+
+      // Update salePrice if provided
+      if (updateProductDto.salePrice !== undefined) {
+        product.salePrice = updateProductDto.salePrice;
+      }
+
+      // Determine effective price: salePrice if on sale and not expired, otherwise regularPrice, fallback to price
+      const effectivePrice = this.getEffectivePrice(
+        product.salePrice,
+        product.regularPrice,
+        updateProductDto.price,
+        product.salePriceExpiresAt,
+      );
+
+      if (effectivePrice !== null && effectivePrice !== undefined) {
+        product.price = effectivePrice; // Update legacy price field for backward compatibility
+        product.basePrice = effectivePrice; // Update basePrice
+        // baseCurrency should remain the same (determined by seller's market)
+      }
     }
 
     // Handle image cleanup if images are being updated
@@ -801,6 +959,7 @@ export class ProductsService {
       category,
       sellerId,
       sortBy = 'newest',
+      onSale,
     } = query;
     const skip = (page - 1) * limit;
 
@@ -838,6 +997,24 @@ export class ProductsService {
       queryBuilder.andWhere('product.sellerId = :sellerId', {
         sellerId,
       });
+    }
+
+    // Filter by sale status
+    if (onSale !== undefined) {
+      if (onSale === true) {
+        // Only products with active sale price (not expired)
+        queryBuilder.andWhere('product.salePrice IS NOT NULL')
+          .andWhere(
+            '(product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :now)',
+            { now: new Date() },
+          );
+      } else {
+        // Only products without active sale price
+        queryBuilder.andWhere(
+          '(product.salePrice IS NULL OR (product.salePriceExpiresAt IS NOT NULL AND product.salePriceExpiresAt <= :now))',
+          { now: new Date() },
+        );
+      }
     }
 
     // Apply sorting
@@ -880,8 +1057,11 @@ export class ProductsService {
       });
     }
 
+    // Normalize prices to handle expired sale prices
+    const normalizedProducts = this.normalizeProductPrices(products);
+
     // Map products to include storeName from sellerSettings
-    const productsWithStore = products.map((product) => {
+    const productsWithStore = normalizedProducts.map((product) => {
       const sellerSettings = sellerSettingsMap.get(product.sellerId);
       return {
         ...product,
@@ -924,7 +1104,7 @@ export class ProductsService {
     await this.productsRepository.increment({ id }, 'views', 1);
 
     // Reload product to get updated views count
-    const updatedProduct = await this.productsRepository.findOne({
+    let updatedProduct = await this.productsRepository.findOne({
       where: { id },
       relations: [
         'category',
@@ -935,15 +1115,18 @@ export class ProductsService {
       ],
     });
 
+    // Normalize price to handle expired sale prices
+    updatedProduct = this.normalizeProductPrice(updatedProduct!);
+
     // Get seller settings to include store name
     const sellerSettings = await this.sellerSettingsRepository.findOne({
-      where: { sellerId: updatedProduct!.sellerId },
+      where: { sellerId: updatedProduct.sellerId },
     });
 
     return {
-      ...updatedProduct!,
+      ...updatedProduct,
       seller: {
-        ...updatedProduct!.seller,
+        ...updatedProduct.seller,
         storeName: sellerSettings?.storeName || null,
         storeLogo: sellerSettings?.logo || null,
       },

@@ -10,6 +10,7 @@ import {
   ArrayMaxSize,
   ValidateNested,
   IsUrl,
+  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -39,6 +40,20 @@ export class UpdateProductDto {
   @Min(0)
   @IsOptional()
   price?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  regularPrice?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  salePrice?: number;
+
+  @IsDateString()
+  @IsOptional()
+  salePriceExpiresAt?: string;
 
   @IsNumber()
   @Min(0)

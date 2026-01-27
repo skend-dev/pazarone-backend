@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsUUID, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -49,5 +49,14 @@ export class PublicProductQueryDto {
   @IsOptional()
   @IsString()
   sortBy?: 'newest' | 'oldest' | 'price_asc' | 'price_desc' | 'name_asc' | 'name_desc' = 'newest';
+
+  @ApiPropertyOptional({ 
+    description: 'Filter products on sale (true = only products with active sale price, false = only products without sale)', 
+    example: true
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  onSale?: boolean;
 }
 

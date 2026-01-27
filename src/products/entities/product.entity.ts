@@ -61,6 +61,15 @@ export class Product {
   @Column({ type: 'varchar', length: 3, nullable: true, default: 'MKD' })
   baseCurrency: string | null; // 'MKD' or 'EUR' - determined by seller's market
 
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  regularPrice: number | null; // Regular price of the product
+
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  salePrice: number | null; // Sale/discounted price (if on sale)
+
+  @Column({ type: 'timestamp', nullable: true })
+  salePriceExpiresAt: Date | null; // Optional expiration date/time for sale price
+
   @Column('int', { default: 0 })
   stock: number;
 
