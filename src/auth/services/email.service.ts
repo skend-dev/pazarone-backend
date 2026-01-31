@@ -472,6 +472,91 @@ You received this email because your password was changed on PazarOne.`,
     }
   }
 
+  /**
+   * Send weekly affiliate newsletter
+   */
+  async sendAffiliateWeeklyNewsletter(
+    email: string,
+    name: string,
+    stats: {
+      totalEarnings: number;
+      availableBalance: number;
+      totalClicks: number;
+      totalOrders: number;
+      referralCode: string;
+      referralLink: string;
+      thisWeekClicks?: number;
+      thisWeekOrders?: number;
+      thisWeekEarnings?: number;
+    },
+    productsOnSale: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    topProducts: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    highCommissionProducts: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    motivationalMessage: string,
+  ): Promise<void> {
+    const msg = {
+      to: email,
+      from: {
+        email: this.fromEmail,
+        name: this.fromName,
+      },
+      replyTo: this.replyToEmail,
+      subject: 'Weekly Affiliate Update - Hot Products & Your Earnings',
+      html: this.getAffiliateWeeklyNewsletterEmailTemplate(
+        name,
+        stats,
+        productsOnSale,
+        topProducts,
+        highCommissionProducts,
+        motivationalMessage,
+      ),
+      text: this.getAffiliateWeeklyNewsletterText(
+        name,
+        stats,
+        productsOnSale,
+        topProducts,
+        highCommissionProducts,
+        motivationalMessage,
+      ),
+      headers: this.getEmailHeaders(email),
+    };
+
+    try {
+      await sgMail.send(msg);
+      this.logger.log(`Affiliate weekly newsletter sent to ${email}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send affiliate weekly newsletter to ${email}:`,
+        error,
+      );
+      throw error; // Re-throw to allow caller to handle
+    }
+  }
+
   // Email Templates
 
   private getOrderConfirmationEmailTemplate(
@@ -801,5 +886,328 @@ Support: ${this.replyToEmail}`;
         </body>
       </html>
     `;
+  }
+
+  private getAffiliateWeeklyNewsletterEmailTemplate(
+    name: string,
+    stats: {
+      totalEarnings: number;
+      availableBalance: number;
+      totalClicks: number;
+      totalOrders: number;
+      referralCode: string;
+      referralLink: string;
+      thisWeekClicks?: number;
+      thisWeekOrders?: number;
+      thisWeekEarnings?: number;
+    },
+    productsOnSale: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    topProducts: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    highCommissionProducts: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    motivationalMessage: string,
+  ): string {
+    const formatPrice = (price: number | null): string => {
+      if (!price) return 'N/A';
+      return `${price.toFixed(2)} den`;
+    };
+
+    const formatProductCard = (
+      product: {
+        id: string;
+        name: string;
+        description: string;
+        regularPrice: number | null;
+        salePrice: number | null;
+        affiliateCommission: number;
+        imageUrl: string | null;
+      },
+      referralCode: string,
+    ): string => {
+      const productUrl = `${this.frontendUrl}/products/${product.id}?ref=${referralCode}`;
+      const effectivePrice = product.salePrice || product.regularPrice;
+      const discount =
+        product.salePrice && product.regularPrice
+          ? Math.round(
+              ((product.regularPrice - product.salePrice) /
+                product.regularPrice) *
+                100,
+            )
+          : 0;
+
+      return `
+        <div style="background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+          <div style="display: flex; gap: 15px;">
+            ${product.imageUrl
+              ? `<div style="flex-shrink: 0;">
+                  <img src="${product.imageUrl}" alt="${product.name}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;" />
+                </div>`
+              : ''}
+            <div style="flex: 1;">
+              <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 18px;">
+                <a href="${productUrl}" style="color: #3498db; text-decoration: none;">${product.name}</a>
+              </h3>
+              <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; line-height: 1.4;">
+                ${product.description.substring(0, 100)}${product.description.length > 100 ? '...' : ''}
+              </p>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <div>
+                  ${product.salePrice && product.regularPrice
+                    ? `<div style="color: #e74c3c; font-size: 20px; font-weight: bold;">
+                        ${formatPrice(product.salePrice)}
+                        <span style="color: #999; font-size: 14px; font-weight: normal; text-decoration: line-through; margin-left: 8px;">
+                          ${formatPrice(product.regularPrice)}
+                        </span>
+                        <span style="background-color: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-left: 8px;">
+                          -${discount}%
+                        </span>
+                      </div>`
+                    : `<div style="color: #2c3e50; font-size: 20px; font-weight: bold;">${formatPrice(effectivePrice)}</div>`}
+                  <div style="color: #27ae60; font-size: 14px; margin-top: 4px;">
+                    Commission: ${product.affiliateCommission.toFixed(1)}%
+                  </div>
+                </div>
+                <a href="${productUrl}" style="background-color: #3498db; color: #fff; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: 500;">
+                  View Product
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const productsOnSaleHtml =
+      productsOnSale.length > 0
+        ? productsOnSale
+            .map((product) => formatProductCard(product, stats.referralCode))
+            .join('')
+        : '<p style="color: #666;">No products on sale this week.</p>';
+
+    const topProductsHtml =
+      topProducts.length > 0
+        ? topProducts
+            .map((product) => formatProductCard(product, stats.referralCode))
+            .join('')
+        : '<p style="color: #666;">No top products available.</p>';
+
+    const highCommissionProductsHtml =
+      highCommissionProducts.length > 0
+        ? highCommissionProducts
+            .map((product) => formatProductCard(product, stats.referralCode))
+            .join('')
+        : '<p style="color: #666;">No high commission products available.</p>';
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+            ${this.getLogoHtml()}
+            <h1 style="color: #2c3e50; margin-top: 0; font-size: 28px;">Hello ${name}!</h1>
+            <p style="font-size: 16px; color: #666; margin-bottom: 30px;">
+              ${motivationalMessage}
+            </p>
+
+            <!-- Performance Stats Section -->
+            <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3498db;">
+              <h2 style="color: #2c3e50; margin-top: 0; font-size: 22px;">Your Performance</h2>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 15px;">
+                <div>
+                  <div style="color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 4px;">Total Earnings</div>
+                  <div style="color: #27ae60; font-size: 24px; font-weight: bold;">${stats.totalEarnings.toFixed(2)} den</div>
+                </div>
+                <div>
+                  <div style="color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 4px;">Available Balance</div>
+                  <div style="color: #3498db; font-size: 24px; font-weight: bold;">${stats.availableBalance.toFixed(2)} den</div>
+                </div>
+                <div>
+                  <div style="color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 4px;">Total Clicks</div>
+                  <div style="color: #2c3e50; font-size: 24px; font-weight: bold;">${stats.totalClicks}</div>
+                </div>
+                <div>
+                  <div style="color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 4px;">Total Orders</div>
+                  <div style="color: #2c3e50; font-size: 24px; font-weight: bold;">${stats.totalOrders}</div>
+                </div>
+              </div>
+              ${stats.thisWeekClicks !== undefined || stats.thisWeekOrders !== undefined || stats.thisWeekEarnings !== undefined
+                ? `<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                    <div style="color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 8px;">This Week</div>
+                    <div style="display: flex; gap: 20px;">
+                      ${stats.thisWeekClicks !== undefined ? `<span style="color: #666;">Clicks: <strong>${stats.thisWeekClicks}</strong></span>` : ''}
+                      ${stats.thisWeekOrders !== undefined ? `<span style="color: #666;">Orders: <strong>${stats.thisWeekOrders}</strong></span>` : ''}
+                      ${stats.thisWeekEarnings !== undefined ? `<span style="color: #27ae60;">Earnings: <strong>${stats.thisWeekEarnings.toFixed(2)} den</strong></span>` : ''}
+                    </div>
+                  </div>`
+                : ''}
+            </div>
+
+            <!-- Products on Sale Section -->
+            ${productsOnSale.length > 0
+              ? `<div style="margin: 30px 0;">
+                  <h2 style="color: #e74c3c; margin-top: 0; font-size: 22px;">🔥 Products on Sale</h2>
+                  ${productsOnSaleHtml}
+                </div>`
+              : ''}
+
+            <!-- Top Products Section -->
+            ${topProducts.length > 0
+              ? `<div style="margin: 30px 0;">
+                  <h2 style="color: #2c3e50; margin-top: 0; font-size: 22px;">⭐ Top-Selling Products</h2>
+                  ${topProductsHtml}
+                </div>`
+              : ''}
+
+            <!-- High Commission Products Section -->
+            ${highCommissionProducts.length > 0
+              ? `<div style="margin: 30px 0;">
+                  <h2 style="color: #27ae60; margin-top: 0; font-size: 22px;">💰 High Commission Products</h2>
+                  ${highCommissionProductsHtml}
+                </div>`
+              : ''}
+
+            <!-- Call to Action -->
+            <div style="text-align: center; margin: 30px 0; padding: 25px; background-color: #3498db; border-radius: 8px;">
+              <h3 style="color: #fff; margin-top: 0; font-size: 20px;">Your Referral Link</h3>
+              <p style="color: #fff; margin: 15px 0; font-size: 14px; word-break: break-all; background-color: rgba(255,255,255,0.2); padding: 10px; border-radius: 4px;">
+                ${stats.referralLink}
+              </p>
+              <p style="color: #fff; margin: 10px 0; font-size: 14px;">Referral Code: <strong>${stats.referralCode}</strong></p>
+              <a href="${stats.referralLink}" style="display: inline-block; background-color: #fff; color: #3498db; padding: 12px 30px; text-decoration: none; border-radius: 4px; font-weight: 600; margin-top: 15px;">
+                Go to Dashboard
+              </a>
+            </div>
+
+            ${this.getEmailFooter('you are an affiliate on PazarOne')}
+          </div>
+        </body>
+      </html>
+    `;
+  }
+
+  private getAffiliateWeeklyNewsletterText(
+    name: string,
+    stats: {
+      totalEarnings: number;
+      availableBalance: number;
+      totalClicks: number;
+      totalOrders: number;
+      referralCode: string;
+      referralLink: string;
+      thisWeekClicks?: number;
+      thisWeekOrders?: number;
+      thisWeekEarnings?: number;
+    },
+    productsOnSale: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    topProducts: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    highCommissionProducts: Array<{
+      id: string;
+      name: string;
+      description: string;
+      regularPrice: number | null;
+      salePrice: number | null;
+      affiliateCommission: number;
+      imageUrl: string | null;
+    }>,
+    motivationalMessage: string,
+  ): string {
+    const formatPrice = (price: number | null): string => {
+      if (!price) return 'N/A';
+      return `${price.toFixed(2)} den`;
+    };
+
+    const formatProductList = (
+      products: Array<{
+        name: string;
+        regularPrice: number | null;
+        salePrice: number | null;
+        affiliateCommission: number;
+      }>,
+    ): string => {
+      if (products.length === 0) return 'None';
+      return products
+        .map(
+          (p) =>
+            `- ${p.name} (${p.salePrice ? formatPrice(p.salePrice) : formatPrice(p.regularPrice)}, Commission: ${p.affiliateCommission.toFixed(1)}%)`,
+        )
+        .join('\n');
+    };
+
+    return `PazarOne – Weekly Affiliate Update
+
+Hello ${name}!
+
+${motivationalMessage}
+
+YOUR PERFORMANCE
+Total Earnings: ${stats.totalEarnings.toFixed(2)} den
+Available Balance: ${stats.availableBalance.toFixed(2)} den
+Total Clicks: ${stats.totalClicks}
+Total Orders: ${stats.totalOrders}
+${stats.thisWeekClicks !== undefined || stats.thisWeekOrders !== undefined || stats.thisWeekEarnings !== undefined
+        ? `\nThis Week:
+${stats.thisWeekClicks !== undefined ? `Clicks: ${stats.thisWeekClicks}\n` : ''}${stats.thisWeekOrders !== undefined ? `Orders: ${stats.thisWeekOrders}\n` : ''}${stats.thisWeekEarnings !== undefined ? `Earnings: ${stats.thisWeekEarnings.toFixed(2)} den\n` : ''}`
+        : ''}
+
+PRODUCTS ON SALE
+${formatProductList(productsOnSale)}
+
+TOP-SELLING PRODUCTS
+${formatProductList(topProducts)}
+
+HIGH COMMISSION PRODUCTS
+${formatProductList(highCommissionProducts)}
+
+YOUR REFERRAL LINK
+${stats.referralLink}
+Referral Code: ${stats.referralCode}
+
+Visit your dashboard: ${this.frontendUrl}/affiliate/dashboard
+
+You received this email because you are an affiliate on PazarOne.
+Support: ${this.replyToEmail}`;
   }
 }

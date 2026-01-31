@@ -19,6 +19,7 @@ export enum NotificationType {
   PRODUCT_LOW_STOCK = 'product_low_stock',
   REVIEW_RECEIVED = 'review_received',
   AFFILIATE_COMMISSION = 'affiliate_commission',
+  AFFILIATE_WEEKLY_UPDATE = 'affiliate_weekly_update',
   WITHDRAWAL_APPROVED = 'withdrawal_approved',
   WITHDRAWAL_REJECTED = 'withdrawal_rejected',
   SYSTEM_ANNOUNCEMENT = 'system_announcement',

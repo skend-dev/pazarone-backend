@@ -90,6 +90,8 @@ export class AdminProductsService {
         name: product.name,
         description: product.description,
         price: parseFloat(product.price.toString()),
+        regularPrice: product.regularPrice ? parseFloat(product.regularPrice.toString()) : null,
+        salePrice: product.salePrice ? parseFloat(product.salePrice.toString()) : null,
         stock: product.stock,
         status: product.status,
         approved: product.approved,
