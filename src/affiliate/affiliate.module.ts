@@ -1,6 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AffiliateService } from './affiliate.service';
+import { AffiliateCommunicationsService } from './affiliate-communications.service';
+import { AffiliateCommunicationsSchedulerService } from './affiliate-communications-scheduler.service';
 import { AffiliateDashboardController } from './affiliate-dashboard.controller';
 import { AffiliateAnalyticsController } from './affiliate-analytics.controller';
 import { AffiliatePublicController } from './affiliate-public.controller';
@@ -14,14 +17,18 @@ import { AffiliatePaymentMethod } from './entities/affiliate-payment-method.enti
 import { PaymentMethodOtp } from './entities/payment-method-otp.entity';
 import { User } from '../users/entities/user.entity';
 import { Order } from '../orders/entities/order.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { PlatformModule } from '../platform/platform.module';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PlatformModule,
     forwardRef(() => AuthModule),
+    NotificationsModule,
     TypeOrmModule.forFeature([
       AffiliateReferral,
       AffiliateReferralClick,
@@ -31,6 +38,7 @@ import { AuthModule } from '../auth/auth.module';
       PaymentMethodOtp,
       User,
       Order,
+      OrderItem,
       Product,
     ]),
   ],
@@ -41,7 +49,11 @@ import { AuthModule } from '../auth/auth.module';
     AffiliateSettingsController,
     AffiliateWithdrawalsController,
   ],
-  providers: [AffiliateService],
+  providers: [
+    AffiliateService,
+    AffiliateCommunicationsService,
+    AffiliateCommunicationsSchedulerService,
+  ],
   exports: [AffiliateService],
 })
 export class AffiliateModule {}
