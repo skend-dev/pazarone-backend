@@ -30,6 +30,7 @@ import { PaymentMethodOtp } from './affiliate/entities/payment-method-otp.entity
 import { PlatformModule } from './platform/platform.module';
 import { PlatformSettings } from './platform/entities/platform-settings.entity';
 import { AdminModule } from './admin/admin.module';
+import { Broadcast } from './admin/entities/broadcast.entity';
 import { NotificationsModule } from './notifications/notifications.module';
 import { Notification } from './notifications/entities/notification.entity';
 import { EmailVerification } from './auth/entities/email-verification.entity';
@@ -88,6 +89,7 @@ import { InvoiceItem } from './invoice/entities/invoice-item.entity';
           CustomerNotificationPreferences,
           Invoice,
           InvoiceItem,
+          Broadcast,
         ],
         synchronize: false, // Always false - use migrations in production
         // Only log errors in development, disable query logging for cleaner output
