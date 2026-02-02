@@ -22,6 +22,9 @@ export class Broadcast {
   @Column('text')
   message: string;
 
+  @Column({ type: 'varchar', length: 40 })
+  broadcastType: string; // promote_products_affiliates | general_announcement | marketing_products_customers
+
   @Column('jsonb')
   targetAudience: string[]; // ['affiliate', 'seller', 'customer']
 

@@ -52,6 +52,10 @@ export class AdminBroadcastController {
               id: { type: 'string', format: 'uuid' },
               title: { type: 'string' },
               message: { type: 'string' },
+              broadcastType: {
+                type: 'string',
+                enum: ['promote_products_affiliates', 'general_announcement', 'marketing_products_customers'],
+              },
               targetAudience: { type: 'array', items: { type: 'string' } },
               deliveryMethod: { type: 'string' },
               featuredProductIds: {

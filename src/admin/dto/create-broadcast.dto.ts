@@ -17,7 +17,21 @@ export type TargetAudienceType = (typeof TARGET_AUDIENCE)[number];
 export const DELIVERY_METHOD = ['email', 'notification', 'both'] as const;
 export type DeliveryMethodType = (typeof DELIVERY_METHOD)[number];
 
+export const BROADCAST_TYPE = [
+  'promote_products_affiliates',
+  'general_announcement',
+  'marketing_products_customers',
+] as const;
+export type BroadcastType = (typeof BROADCAST_TYPE)[number];
+
 export class CreateBroadcastDto {
+  @ApiProperty({
+    description: 'Broadcast type: controls audience and product link behavior',
+    enum: BROADCAST_TYPE,
+  })
+  @IsIn(BROADCAST_TYPE)
+  broadcastType: BroadcastType;
+
   @ApiProperty({
     description: 'Announcement title',
     example: 'New seasonal sale',

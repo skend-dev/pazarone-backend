@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -168,6 +168,7 @@ export class AdminBroadcastService {
       id: string;
       title: string;
       message: string;
+      broadcastType: string;
       targetAudience: string[];
       deliveryMethod: string;
       featuredProductIds: string[] | null;
@@ -191,6 +192,7 @@ export class AdminBroadcastService {
         id: b.id,
         title: b.title,
         message: b.message,
+        broadcastType: b.broadcastType ?? 'general_announcement',
         targetAudience: b.targetAudience,
         deliveryMethod: b.deliveryMethod,
         featuredProductIds: b.featuredProductIds,
@@ -215,6 +217,41 @@ export class AdminBroadcastService {
   }
 
   /**
+   * Validate broadcast payload by broadcastType rules
+   */
+  private validateBroadcastPayload(dto: CreateBroadcastDto): void {
+    const { broadcastType, targetAudience, featuredProductIds } = dto;
+
+    if (broadcastType === 'promote_products_affiliates') {
+      if (
+        !(
+          targetAudience.length === 1 && targetAudience[0] === 'affiliate'
+        )
+      ) {
+        throw new BadRequestException(
+          'For broadcast type "promote_products_affiliates", targetAudience must be exactly ["affiliate"].',
+        );
+      }
+      if (!featuredProductIds?.length) {
+        throw new BadRequestException(
+          'For broadcast type "promote_products_affiliates", featuredProductIds is required (at least one product).',
+        );
+      }
+    } else if (broadcastType === 'marketing_products_customers') {
+      if (
+        !(
+          targetAudience.length === 1 && targetAudience[0] === 'customer'
+        )
+      ) {
+        throw new BadRequestException(
+          'For broadcast type "marketing_products_customers", targetAudience must be exactly ["customer"].',
+        );
+      }
+    }
+    // general_announcement: any combination allowed
+  }
+
+  /**
    * Send broadcast: resolve recipients, create notifications, send emails, persist record
    */
   async broadcast(
@@ -226,6 +263,8 @@ export class AdminBroadcastService {
     notificationsCreated: number;
     message: string;
   }> {
+    this.validateBroadcastPayload(dto);
+
     const recipients = await this.getRecipients(dto.targetAudience);
     const sendNotification =
       dto.deliveryMethod === 'notification' || dto.deliveryMethod === 'both';
@@ -276,10 +315,13 @@ export class AdminBroadcastService {
 
       if (sendEmail && user.email) {
         try {
-          const referralCode =
-            user.userType === UserType.AFFILIATE
-              ? await this.getReferralCodeForAffiliate(user.id)
-              : null;
+          // Only add referral code for promote_products_affiliates type; others use standard links
+          const useReferralCode =
+            dto.broadcastType === 'promote_products_affiliates' &&
+            user.userType === UserType.AFFILIATE;
+          const referralCode = useReferralCode
+            ? await this.getReferralCodeForAffiliate(user.id)
+            : null;
           const productPayload =
             featuredProducts.length > 0
               ? featuredProducts.map((p) => ({
@@ -313,6 +355,7 @@ export class AdminBroadcastService {
       this.broadcastRepository.create({
         title: dto.title,
         message: dto.message,
+        broadcastType: dto.broadcastType,
         targetAudience: dto.targetAudience,
         deliveryMethod: dto.deliveryMethod,
         featuredProductIds: dto.featuredProductIds ?? null,
