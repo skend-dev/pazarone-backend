@@ -10,6 +10,9 @@ export class EmailService {
   private readonly fromEmail: string;
   private readonly fromName: string;
   private readonly replyToEmail: string;
+  /** From/reply-to for marketing & announcements (broadcast emails) */
+  private readonly marketingFromEmail: string;
+  private readonly marketingFromName: string;
   private readonly frontendUrl: string;
   private readonly logoUrl: string | null;
 
@@ -31,6 +34,12 @@ export class EmailService {
     this.replyToEmail =
       this.configService.get<string>('SENDGRID_REPLY_TO_EMAIL') ||
       'support@pazarone.co';
+    this.marketingFromEmail =
+      this.configService.get<string>('SENDGRID_MARKETING_FROM_EMAIL') ||
+      'hello@pazarone.co';
+    this.marketingFromName =
+      this.configService.get<string>('SENDGRID_MARKETING_FROM_NAME') ||
+      'PazarOne Marketing';
     this.frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'https://pazarone.co';
     this.logoUrl =
@@ -473,6 +482,54 @@ You received this email because your password was changed on PazarOne.`,
   }
 
   /**
+   * Send broadcast announcement email (admin broadcast to affiliates, sellers, customers)
+   * Optional product cards with CTA links (productUrl already includes ?ref= for affiliates when applicable)
+   */
+  async sendBroadcastAnnouncement(
+    email: string,
+    name: string,
+    title: string,
+    message: string,
+    products?: Array<{
+      id: string;
+      name: string;
+      price: number | null;
+      salePrice: number | null;
+      imageUrl: string | null;
+      productUrl: string;
+    }>,
+  ): Promise<void> {
+    const msg = {
+      to: email,
+      from: {
+        email: this.marketingFromEmail,
+        name: this.marketingFromName,
+      },
+      replyTo: this.marketingFromEmail,
+      subject: title,
+      html: this.getBroadcastAnnouncementEmailTemplate(
+        name,
+        title,
+        message,
+        products || [],
+      ),
+      text: this.getBroadcastAnnouncementText(name, title, message, products || []),
+      headers: this.getEmailHeaders(email),
+    };
+
+    try {
+      await sgMail.send(msg);
+      this.logger.log(`Broadcast announcement email sent to ${email}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send broadcast announcement email to ${email}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Send weekly affiliate newsletter
    */
   async sendAffiliateWeeklyNewsletter(
@@ -558,6 +615,131 @@ You received this email because your password was changed on PazarOne.`,
   }
 
   // Email Templates
+
+  private getBroadcastAnnouncementEmailTemplate(
+    name: string,
+    title: string,
+    message: string,
+    products: Array<{
+      id: string;
+      name: string;
+      price: number | null;
+      salePrice: number | null;
+      imageUrl: string | null;
+      productUrl: string;
+    }>,
+  ): string {
+    const formatPrice = (price: number | null): string => {
+      if (price === null || price === undefined) return 'N/A';
+      return `${Number(price).toFixed(2)} den`;
+    };
+
+    const productCardsHtml =
+      products.length > 0
+        ? products
+            .map((product) => {
+              const effectivePrice = product.salePrice ?? product.price;
+              const discount =
+                product.salePrice != null &&
+                product.price != null &&
+                product.price > 0
+                  ? Math.round(
+                      ((product.price - product.salePrice) / product.price) * 100,
+                    )
+                  : 0;
+              return `
+        <div style="background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+          <div style="display: flex; gap: 15px;">
+            ${
+              product.imageUrl
+                ? `<div style="flex-shrink: 0;">
+                <img src="${product.imageUrl}" alt="${product.name}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;" />
+              </div>`
+                : ''
+            }
+            <div style="flex: 1;">
+              <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 18px;">
+                <a href="${product.productUrl}" style="color: #3498db; text-decoration: none;">${product.name}</a>
+              </h3>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <div>
+                  ${
+                    product.salePrice != null && product.price != null
+                      ? `<div style="color: #e74c3c; font-size: 20px; font-weight: bold;">
+                    ${formatPrice(product.salePrice)}
+                    <span style="color: #999; font-size: 14px; font-weight: normal; text-decoration: line-through; margin-left: 8px;">
+                      ${formatPrice(product.price)}
+                    </span>
+                    <span style="background-color: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-left: 8px;">
+                      -${discount}%
+                    </span>
+                  </div>`
+                      : `<div style="color: #2c3e50; font-size: 20px; font-weight: bold;">${formatPrice(effectivePrice)}</div>`
+                  }
+                </div>
+                <a href="${product.productUrl}" style="background-color: #3498db; color: #fff; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: 500;">
+                  View Product
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+            })
+            .join('')
+        : '';
+
+    const productsSection =
+      products.length > 0
+        ? `
+      <div style="margin: 30px 0;">
+        <h2 style="color: #2c3e50; margin-top: 0; font-size: 22px;">Featured Products</h2>
+        ${productCardsHtml}
+      </div>
+    `
+        : '';
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+            ${this.getLogoHtml()}
+            <h1 style="color: #2c3e50; margin-top: 0; font-size: 24px;">${title}</h1>
+            <p style="font-size: 16px; color: #666;">Hello ${name},</p>
+            <p style="font-size: 16px; color: #333; white-space: pre-wrap;">${message}</p>
+            ${productsSection}
+            ${this.getEmailFooter('you are registered on PazarOne')}
+          </div>
+        </body>
+      </html>
+    `;
+  }
+
+  private getBroadcastAnnouncementText(
+    name: string,
+    title: string,
+    message: string,
+    products: Array<{
+      id: string;
+      name: string;
+      productUrl: string;
+    }>,
+  ): string {
+    let text = `PazarOne – ${title}\n\nHello ${name},\n\n${message}\n\n`;
+    if (products.length > 0) {
+      text += 'Featured products:\n';
+      products.forEach((p) => {
+        text += `- ${p.name}: ${p.productUrl}\n`;
+      });
+    }
+    text += `\nYou received this email because you are registered on PazarOne.`;
+    return text;
+  }
 
   private getOrderConfirmationEmailTemplate(
     orderNumber: string,

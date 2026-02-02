@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { SellerSettings } from './entities/seller-settings.entity';
 import { User } from '../users/entities/user.entity';
+import { Product, ProductStatus } from '../products/entities/product.entity';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { UpdateStoreDto } from './dto/update-store.dto';
@@ -26,6 +27,8 @@ export class SellerSettingsService {
     private settingsRepository: Repository<SellerSettings>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(Product)
+    private productRepository: Repository<Product>,
     private platformSettingsService: PlatformSettingsService,
     @Inject(forwardRef(() => EmailService))
     private emailService: EmailService,
@@ -100,6 +103,55 @@ export class SellerSettingsService {
         ? settings.paymentRestrictedAt.toISOString()
         : null,
     };
+  }
+
+  /**
+   * Get featured (verified) sellers for public listing.
+   * Returns sellers with store info and product counts.
+   */
+  async getFeaturedSellers(limit: number = 10): Promise<{
+    sellers: Array<{
+      id: string;
+      name: string;
+      logo: string | null;
+      location: string | null;
+      rating: number | null;
+      reviewsCount: number;
+      productsCount: number;
+      verified: boolean;
+      responseTime: string | null;
+      specialties: string[];
+    }>;
+  }> {
+    const settingsList = await this.settingsRepository.find({
+      where: { verified: true },
+      take: limit,
+      relations: ['seller'],
+      order: { updatedAt: 'DESC' },
+    });
+
+    const sellers = await Promise.all(
+      settingsList.map(async (settings) => {
+        const user = settings.seller;
+        const productsCount = await this.productRepository.count({
+          where: { sellerId: settings.sellerId, status: ProductStatus.ACTIVE },
+        });
+        return {
+          id: settings.sellerId,
+          name: settings.storeName || user?.name || 'Seller',
+          logo: settings.logo ?? null,
+          location: null,
+          rating: null,
+          reviewsCount: 0,
+          productsCount,
+          verified: settings.verified ?? false,
+          responseTime: null,
+          specialties: [],
+        };
+      }),
+    );
+
+    return { sellers };
   }
 
   /**

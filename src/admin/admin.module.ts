@@ -9,6 +9,7 @@ import { AffiliateWithdrawal } from '../affiliate/entities/affiliate-withdrawal.
 import { AffiliatePaymentMethod } from '../affiliate/entities/affiliate-payment-method.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
+import { Broadcast } from './entities/broadcast.entity';
 import { AdminUsersService } from './admin-users.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminOrdersService } from './admin-orders.service';
@@ -21,6 +22,8 @@ import { AdminSellersService } from './admin-sellers.service';
 import { AdminSellersController } from './admin-sellers.controller';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { AdminDashboardController } from './admin-dashboard.controller';
+import { AdminBroadcastService } from './admin-broadcast.service';
+import { AdminBroadcastController } from './admin-broadcast.controller';
 import { PlatformModule } from '../platform/platform.module';
 import { SellerModule } from '../seller/seller.module';
 import { ProductsModule } from '../products/products.module';
@@ -44,6 +47,7 @@ import { forwardRef } from '@nestjs/common';
       AffiliateWithdrawal,
       AffiliatePaymentMethod,
       SellerSettings,
+      Broadcast,
     ]),
   ],
   controllers: [
@@ -53,6 +57,7 @@ import { forwardRef } from '@nestjs/common';
     AdminAffiliatesController,
     AdminSellersController,
     AdminDashboardController,
+    AdminBroadcastController,
   ],
   providers: [
     AdminUsersService,
@@ -61,6 +66,7 @@ import { forwardRef } from '@nestjs/common';
     AdminAffiliatesService,
     AdminSellersService,
     AdminDashboardService,
+    AdminBroadcastService,
   ],
   exports: [
     AdminUsersService,
@@ -69,6 +75,7 @@ import { forwardRef } from '@nestjs/common';
     AdminAffiliatesService,
     AdminSellersService,
     AdminDashboardService,
+    AdminBroadcastService,
   ],
 })
 export class AdminModule {}
