@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsEmail,
   IsNotEmpty,
   IsString,
   IsUUID,
@@ -8,6 +9,7 @@ import {
   IsInt,
   IsObject,
   IsOptional,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -77,7 +79,7 @@ class CustomerInfoDto {
   name: string;
 
   @ApiProperty({ description: 'Customer email', example: 'john@example.com' })
-  @IsString()
+  @IsEmail()
   @IsNotEmpty()
   email: string;
 
@@ -154,7 +156,16 @@ export class CreateOrderDto {
 
   @ApiPropertyOptional({
     description:
-      'Email verification token (required for guest orders, optional for authenticated users)',
+      '"guest" = checkout without account (no email verification); "register" = user chose "Create account" or is logged in. Omitted when not applicable.',
+    enum: ['guest', 'register'],
+  })
+  @IsOptional()
+  @IsIn(['guest', 'register'])
+  checkoutType?: 'guest' | 'register';
+
+  @ApiPropertyOptional({
+    description:
+      'Present only when the user went through email verification (e.g. "Create account" path). Required when unauthenticated and checkoutType is "register" or omitted. Omitted for authenticated users and guest checkout.',
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
   })
   @IsString()
