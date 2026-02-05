@@ -403,79 +403,54 @@ export class OrdersService {
       referralCode,
       affiliateId,
       verificationToken,
+      checkoutType,
     } = createOrderDto;
 
-    // Validate email verification token (required for guest orders, optional for authenticated users)
-    let verifiedEmail: string | null = null;
+    const isAuthenticated = !!customerId;
 
-    // If user is not authenticated (no customerId), verification token is required
-    if (!providedCustomerId && !customerId) {
-      // Check if email is already verified
-      const isEmailVerified =
-        await this.emailVerificationService.isEmailVerified(customer.email);
-
-      if (isEmailVerified) {
-        // Email is already verified, use it directly
-        verifiedEmail = customer.email;
-      } else {
-        // Email not verified, require verification token
-        if (!verificationToken) {
-          throw new BadRequestException(
-            'Verification token is required for guest orders with unverified email',
-          );
-        }
-
-        try {
-          const verification =
-            await this.emailVerificationService.validateVerificationToken(
-              verificationToken,
-            );
-          verifiedEmail = verification.email;
-
-          // Ensure email matches customer email
-          if (verifiedEmail !== customer.email) {
-            throw new BadRequestException(
-              'Verification token email does not match customer email',
-            );
-          }
-        } catch (error) {
-          if (
-            error instanceof BadRequestException ||
-            error instanceof UnauthorizedException
-          ) {
-            throw error;
-          }
-          throw new UnauthorizedException(
-            'Invalid or expired verification token',
-          );
-        }
+    // When to require email verification (verificationToken):
+    // - Authenticated: never require.
+    // - Unauthenticated + checkoutType === 'guest': do not require.
+    // - Unauthenticated + checkoutType === 'register' or omitted: require valid verificationToken.
+    if (!isAuthenticated && checkoutType !== 'guest') {
+      // Register path or checkoutType omitted: require verification token
+      if (!verificationToken) {
+        throw new BadRequestException(
+          'Email verification required for this checkout type. Please verify your email or use guest checkout.',
+        );
       }
-    } else if (verificationToken) {
-      // If authenticated user provides token, validate it but don't require it
       try {
         const verification =
           await this.emailVerificationService.validateVerificationToken(
             verificationToken,
           );
-        verifiedEmail = verification.email;
+        if (verification.email !== customer.email) {
+          throw new BadRequestException(
+            'Verification token email does not match customer email',
+          );
+        }
       } catch (error) {
-        // Log but don't fail for authenticated users
-        console.warn(
-          'Verification token validation failed for authenticated user:',
-          error,
+        if (
+          error instanceof BadRequestException ||
+          error instanceof UnauthorizedException
+        ) {
+          throw error;
+        }
+        throw new UnauthorizedException(
+          'Invalid or expired verification token. Email verification required for this checkout type.',
         );
       }
     }
 
-    // Determine customer ID - use provided customerId, then authenticated customerId, or create/find guest user
+    // Determine customer ID: authenticated from session, then body, then create/find guest user
     let finalCustomerId: string;
 
-    if (providedCustomerId) {
-      // Use provided customer ID (for authenticated users)
-      finalCustomerId = providedCustomerId;
-    } else if (customerId) {
-      // Use authenticated user ID
+    if (customerId) {
+      // Use authenticated customer ID from session (JWT)
       finalCustomerId = customerId;
+    } else if (providedCustomerId) {
+      // Legacy: provided in body (e.g. from tests or older clients)
+      finalCustomerId = providedCustomerId;
     } else {
       // Guest order - find or create guest user
       let guestUser = await this.usersRepository.findOne({

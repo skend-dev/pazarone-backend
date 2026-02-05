@@ -22,8 +22,9 @@ import { CustomerOrderQueryDto } from './dto/customer-order-query.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ReturnOrderDto } from './dto/return-order.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { User } from '../users/entities/user.entity';
+import { User, UserType } from '../users/entities/user.entity';
 
 @ApiTags('orders')
 @Controller('orders')
@@ -31,17 +32,25 @@ export class PublicOrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Create a new order (public - guest orders allowed)',
-    description: 'Create a new order. Can be used by authenticated users or guests. For guests, customer information must be provided in the request body.',
+    summary: 'Create a new order (public - guest and register checkout)',
+    description:
+      'Create a new order. Authenticated customers: order is attached to the session (no verificationToken). ' +
+      'Guest (checkoutType=guest): no account, no verification. Register (checkoutType=register or omitted, unauthenticated): valid verificationToken required.',
   })
   @ApiResponse({ status: 201, description: 'Order created successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request (e.g., insufficient stock)' })
+  @ApiResponse({ status: 400, description: 'Bad request (e.g., insufficient stock, email verification required)' })
+  @ApiResponse({ status: 401, description: 'Unauthorized (e.g., invalid or missing verification token for register checkout)' })
   @ApiResponse({ status: 404, description: 'Product not found' })
-  create(@Body() createOrderDto: CreateOrderDto) {
-    // Public endpoint - no authentication required
-    // Guest orders will create/find a user based on customer email
-    return this.ordersService.create(null, createOrderDto);
+  create(
+    @CurrentUser() user: User | undefined,
+    @Body() createOrderDto: CreateOrderDto,
+  ) {
+    const customerId =
+      user?.userType === UserType.CUSTOMER ? user.id : null;
+    return this.ordersService.create(customerId, createOrderDto);
   }
 
   @Get()
