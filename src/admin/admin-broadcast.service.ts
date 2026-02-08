@@ -203,7 +203,7 @@ export class AdminBroadcastService {
           ? {
               id: b.createdBy.id,
               name: b.createdBy.name,
-              email: b.createdBy.email,
+              email: b.createdBy.email ?? '',
             }
           : { id: '', name: '', email: '' },
       })),

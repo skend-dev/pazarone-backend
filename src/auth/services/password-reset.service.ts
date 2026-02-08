@@ -27,9 +27,8 @@ export class PasswordResetService {
     const user = await this.usersService.findByEmail(email);
 
     // Don't reveal if email exists or not (security best practice)
-    if (!user) {
-      this.logger.warn(`Password reset requested for non-existent email: ${email}`);
-      // Still return success to prevent email enumeration
+    if (!user || user.email == null) {
+      this.logger.warn(`Password reset requested for non-existent or OAuth-only email: ${email}`);
       return;
     }
 

@@ -126,6 +126,19 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   ADMIN_NAME: string;
+
+  // Firebase Admin (optional - for Sign in with Google/Apple)
+  @IsString()
+  @IsOptional()
+  FIREBASE_PROJECT_ID: string;
+
+  @IsString()
+  @IsOptional()
+  FIREBASE_CLIENT_EMAIL: string;
+
+  @IsString()
+  @IsOptional()
+  FIREBASE_PRIVATE_KEY: string;
 }
 
 export function validate(config: Record<string, unknown>) {
@@ -156,6 +169,9 @@ export function validate(config: Record<string, unknown>) {
     'ADMIN_EMAIL',
     'ADMIN_PASSWORD',
     'ADMIN_NAME',
+    'FIREBASE_PROJECT_ID',
+    'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_PRIVATE_KEY',
   ];
 
   const filteredConfig: Record<string, unknown> = {};

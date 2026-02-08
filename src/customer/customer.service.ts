@@ -102,15 +102,16 @@ export class CustomerService {
     // Update password
     await this.usersService.updatePassword(user.id, newPassword);
 
-    // Send password change confirmation email
-    try {
-      await this.emailService.sendPasswordChangeConfirmation(user.email);
-    } catch (error) {
-      // Log error but don't fail password change
-      console.error(
-        `Failed to send password change confirmation email to ${user.email}:`,
-        error,
-      );
+    // Send password change confirmation email (only if user has email, e.g. not OAuth-only)
+    if (user.email) {
+      try {
+        await this.emailService.sendPasswordChangeConfirmation(user.email);
+      } catch (error) {
+        console.error(
+          `Failed to send password change confirmation email to ${user.email}:`,
+          error,
+        );
+      }
     }
   }
 
