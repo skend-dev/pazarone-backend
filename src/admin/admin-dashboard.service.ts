@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, In } from 'typeorm';
 import { User, UserType } from '../users/entities/user.entity';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
 import { Product, ProductStatus } from '../products/entities/product.entity';
@@ -168,6 +168,54 @@ export class AdminDashboardService {
     const platformFeeEUR = (totalRevenueEURAmount * platformFeePercent) / 100;
     const platformFee = platformFeeMKD + platformFeeEUR;
 
+    // Marketing fee = platform profit from orders WITHOUT affiliate (commission kept by platform)
+    const orderIdsWithAffiliate = await this.affiliateCommissionRepository
+      .createQueryBuilder('c')
+      .select('DISTINCT c.orderId')
+      .getRawMany()
+      .then((rows) => rows.map((r) => r.orderId));
+
+    const ordersWithoutAffiliate = await this.ordersRepository.find({
+      where: {
+        status: OrderStatus.DELIVERED,
+        ...(orderIdsWithAffiliate.length > 0
+          ? { id: Not(In(orderIdsWithAffiliate)) }
+          : {}),
+      },
+      relations: ['items', 'items.product'],
+    });
+
+    let marketingFeeMKD = 0;
+    let marketingFeeEUR = 0;
+    for (const order of ordersWithoutAffiliate) {
+      const sellerCurrency = order.sellerBaseCurrency || 'MKD';
+      const buyerCurrency = order.buyerCurrency || 'MKD';
+      const exchangeRate = order.exchangeRate != null ? parseFloat(order.exchangeRate.toString()) : 61.5;
+
+      for (const item of order.items || []) {
+        if (!item.product?.affiliateCommission) continue;
+
+        let itemTotalBase: number;
+        if (item.basePrice != null && item.basePrice !== undefined) {
+          itemTotalBase = parseFloat(item.basePrice.toString()) * item.quantity;
+        } else {
+          const buyerAmount = parseFloat(item.price.toString()) * item.quantity;
+          if (buyerCurrency === 'EUR' && sellerCurrency === 'MKD') {
+            itemTotalBase = buyerAmount * exchangeRate;
+          } else if (buyerCurrency === 'MKD' && sellerCurrency === 'EUR') {
+            itemTotalBase = buyerAmount / exchangeRate;
+          } else {
+            itemTotalBase = buyerAmount;
+          }
+        }
+
+        const commission = (itemTotalBase * item.product.affiliateCommission) / 100;
+        if (sellerCurrency === 'MKD') marketingFeeMKD += commission;
+        else marketingFeeEUR += commission;
+      }
+    }
+    const marketingFee = marketingFeeMKD + marketingFeeEUR;
+
     // Affiliate statistics
     const [totalAffiliateEarnings, pendingWithdrawals] = await Promise.all([
       this.affiliateCommissionRepository
@@ -246,6 +294,10 @@ export class AdminDashboardService {
         change: Math.round(revenueChange * 100) / 100,
         platformFee: Math.round(platformFee * 100) / 100,
         platformFeePercent,
+        // Marketing fee = platform profit from orders without affiliate (not paid to affiliates)
+        marketingFeeMKD: Math.round(marketingFeeMKD),
+        marketingFeeEUR: Math.round(marketingFeeEUR * 100) / 100,
+        marketingFee: Math.round(marketingFee * 100) / 100,
       },
       products: {
         total: totalProducts,
