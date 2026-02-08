@@ -2,6 +2,8 @@
 import './polyfills';
 
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { validate } from './config/env.validation';
@@ -44,6 +46,9 @@ import { ProductVariant } from './products/entities/product-variant.entity';
 import { InvoiceModule } from './invoice/invoice.module';
 import { Invoice } from './invoice/entities/invoice.entity';
 import { InvoiceItem } from './invoice/entities/invoice-item.entity';
+import { FirebaseAdminModule } from './firebase/firebase-admin.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserIdentity } from './users/entities/user-identity.entity';
 
 @Module({
   imports: [
@@ -67,6 +72,7 @@ import { InvoiceItem } from './invoice/entities/invoice-item.entity';
         database: configService.get<string>('DATABASE_NAME'),
         entities: [
           User,
+          UserIdentity,
           Product,
           ProductVariantAttribute,
           ProductVariantValue,
@@ -100,6 +106,19 @@ import { InvoiceItem } from './invoice/entities/invoice-item.entity';
       }),
       inject: [ConfigService],
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 1000,
+        limit: 10,
+      },
+      {
+        name: 'medium',
+        ttl: 10000,
+        limit: 30,
+      },
+    ]),
+    FirebaseAdminModule,
     UsersModule,
     AuthModule,
     ProductsModule,
@@ -115,6 +134,12 @@ import { InvoiceItem } from './invoice/entities/invoice-item.entity';
     InvoiceModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

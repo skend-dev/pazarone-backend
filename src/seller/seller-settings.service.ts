@@ -240,15 +240,16 @@ export class SellerSettingsService {
     user.password = hashedPassword;
     await this.usersRepository.save(user);
 
-    // Send password change confirmation email
-    try {
-      await this.emailService.sendPasswordChangeConfirmation(user.email);
-    } catch (error) {
-      // Log error but don't fail password change
-      console.error(
-        `Failed to send password change confirmation email to ${user.email}:`,
-        error,
-      );
+    // Send password change confirmation email (only if user has email)
+    if (user.email) {
+      try {
+        await this.emailService.sendPasswordChangeConfirmation(user.email);
+      } catch (error) {
+        console.error(
+          `Failed to send password change confirmation email to ${user.email}:`,
+          error,
+        );
+      }
     }
 
     return {

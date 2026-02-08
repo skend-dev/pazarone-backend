@@ -19,9 +19,9 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', unique: true, nullable: true })
   @Index()
-  email: string;
+  email: string | null;
 
   @Column()
   name: string;
@@ -29,8 +29,15 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   phone: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  avatarUrl: string | null;
+
   @Column()
   password: string;
+
+  /** True when user has set a platform password (email signup or completed set-password). OAuth-only users start false until they set a password. */
+  @Column({ type: 'boolean', default: true })
+  hasPlatformPassword: boolean;
 
   @Column({
     type: 'enum',

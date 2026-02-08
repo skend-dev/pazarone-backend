@@ -14,11 +14,13 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { SendVerificationEmailDto } from './dto/send-verification-email.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
@@ -26,9 +28,12 @@ import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
 import { CheckEmailVerifiedDto } from './dto/check-email-verified.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpgradeRoleDto } from './dto/upgrade-role.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
+import { UsersService } from '../users/users.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { PasswordResetService } from './services/password-reset.service';
 
@@ -37,6 +42,7 @@ import { PasswordResetService } from './services/password-reset.service';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly usersService: UsersService,
     private readonly emailVerificationService: EmailVerificationService,
     private readonly passwordResetService: PasswordResetService,
   ) {}
@@ -68,6 +74,54 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('firebase')
+  @Throttle({ medium: { limit: 15, ttl: 10000 } })
+  @ApiOperation({
+    summary: 'Sign in with Firebase (Google/Apple)',
+    description:
+      'Exchanges a Firebase ID token for backend JWT. Verifies token server-side, then finds or creates user and links identity. Supports account linking by email.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Signed in successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: { type: 'string' },
+        refreshToken: { type: 'string' },
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            email: { type: 'string', nullable: true },
+            name: { type: 'string' },
+            providers: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['google'],
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request (invalid body or Firebase not configured)',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Invalid or expired Firebase ID token',
+  })
+  async signInWithFirebase(@Body() dto: FirebaseAuthDto) {
+    return this.authService.signInWithFirebase(
+      dto.idToken,
+      dto.device,
+      dto.userType,
+      dto.market,
+    );
   }
 
   @Post('refresh')
@@ -102,12 +156,26 @@ export class AuthController {
         },
         createdAt: { type: 'string', format: 'date-time' },
         updatedAt: { type: 'string', format: 'date-time' },
+        providers: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'OAuth providers linked to this account (e.g. google, apple). Empty for email/password-only.',
+        },
+        requiresSetPassword: {
+          type: 'boolean',
+          description:
+            'True when user has OAuth providers but has not yet set a platform password. Show "Set password" form instead of "Change password".',
+        },
       },
     },
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UseGuards(JwtAuthGuard)
   async getCurrentUser(@CurrentUser() user: User) {
+    const providers = await this.usersService.getProvidersForUser(user.id);
+    const requiresSetPassword =
+      providers.length > 0 && !user.hasPlatformPassword;
     return {
       id: user.id,
       email: user.email,
@@ -115,7 +183,61 @@ export class AuthController {
       userType: user.userType,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      providers,
+      requiresSetPassword,
     };
+  }
+
+  @Post('set-password')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Set password for OAuth-only accounts',
+    description:
+      'Allows users who signed up with Google or Apple to set a platform password. Not allowed for email/password-only accounts (use change password instead).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Password set successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Password set successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Set password is only for accounts that signed in with Google or Apple',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async setPassword(@CurrentUser() user: User, @Body() dto: SetPasswordDto) {
+    return this.authService.setPassword(user, dto);
+  }
+
+  @Post('upgrade-role')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Upgrade customer to seller or affiliate',
+    description:
+      'Allows a customer to become a seller or affiliate. Returns new tokens and user. Market (MK/KS) is required when upgrading to seller.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Role upgraded successfully',
+    type: AuthResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Only customers can upgrade their role',
+  })
+  @ApiResponse({ status: 400, description: 'Market required for seller' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async upgradeRole(@CurrentUser() user: User, @Body() dto: UpgradeRoleDto) {
+    return this.authService.upgradeRole(user, dto.userType, dto.market);
   }
 
   @Post('send-verification-email')
