@@ -42,13 +42,13 @@ export class PublicProductQueryDto {
   sellerId?: string;
 
   @ApiPropertyOptional({ 
-    description: 'Sort order', 
-    enum: ['newest', 'oldest', 'price_asc', 'price_desc', 'name_asc', 'name_desc'],
-    example: 'newest'
+    description: 'Sort order (trending = by popularity: sales and views)', 
+    enum: ['trending', 'newest', 'oldest', 'price_asc', 'price_desc', 'name_asc', 'name_desc'],
+    example: 'trending'
   })
   @IsOptional()
   @IsString()
-  sortBy?: 'newest' | 'oldest' | 'price_asc' | 'price_desc' | 'name_asc' | 'name_desc' = 'newest';
+  sortBy?: 'trending' | 'newest' | 'oldest' | 'price_asc' | 'price_desc' | 'name_asc' | 'name_desc' = 'trending';
 
   @ApiPropertyOptional({ 
     description: 'Filter products on sale (true = only products with active sale price, false = only products without sale)', 
@@ -58,5 +58,37 @@ export class PublicProductQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   onSale?: boolean;
+
+  @ApiPropertyOptional({ description: 'Minimum price (effective price: sale or regular)', example: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  minPrice?: number;
+
+  @ApiPropertyOptional({ description: 'Maximum price (effective price: sale or regular)', example: 20000 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  maxPrice?: number;
+
+  @ApiPropertyOptional({ description: 'Minimum rating (1-5)', example: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  minRating?: number;
+
+  @ApiPropertyOptional({ description: 'Only products in stock (stock > 0)', example: false })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  inStock?: boolean;
+
+  @ApiPropertyOptional({ 
+    description: 'Category IDs comma-separated (products in any of these categories or their subcategories)', 
+    example: 'uuid1,uuid2' 
+  })
+  @IsOptional()
+  @IsString()
+  categories?: string;
 }
 

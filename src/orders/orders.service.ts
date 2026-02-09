@@ -726,6 +726,7 @@ export class OrdersService {
         if (product.stock === 0) {
           product.status = 'out_of_stock' as any;
         }
+        product.sales = (product.sales ?? 0) + itemDto.quantity;
         await this.productsRepository.save(product);
       } else {
         // Product without variants - variantId should not be provided
@@ -749,6 +750,7 @@ export class OrdersService {
         if (product.stock === 0) {
           product.status = 'out_of_stock' as any;
         }
+        product.sales = (product.sales ?? 0) + itemDto.quantity;
         await this.productsRepository.save(product);
       }
 

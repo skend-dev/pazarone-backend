@@ -958,8 +958,13 @@ export class ProductsService {
       search,
       category,
       sellerId,
-      sortBy = 'newest',
+      sortBy = 'trending',
       onSale,
+      minPrice,
+      maxPrice,
+      minRating,
+      inStock,
+      categories: categoriesParam,
     } = query;
     const skip = (page - 1) * limit;
 
@@ -987,7 +992,15 @@ export class ProductsService {
       });
     }
 
-    if (category) {
+    // Category filter: multiple (categories) or single (category)
+    const categoryIds =
+      categoriesParam?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
+    if (categoryIds.length > 0) {
+      queryBuilder.andWhere(
+        '(product.categoryId IN (:...categoryIds) OR category.parentId IN (:...categoryIds))',
+        { categoryIds },
+      );
+    } else if (category) {
       queryBuilder.andWhere('product.categoryId = :categoryId', {
         categoryId: category,
       });
@@ -1017,8 +1030,35 @@ export class ProductsService {
       }
     }
 
+    // Price range (effective price: sale if valid, else regular/base/price)
+    if (minPrice != null || maxPrice != null) {
+      const priceMin = minPrice ?? 0;
+      const priceMax = maxPrice ?? 999999999;
+      queryBuilder.andWhere(
+        `(CASE WHEN (product.salePrice IS NOT NULL AND (product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :priceNow)) THEN product.salePrice ELSE COALESCE(product.regularPrice, product.basePrice, product.price) END) BETWEEN :priceMin AND :priceMax`,
+        { priceNow: new Date(), priceMin, priceMax },
+      );
+    }
+
+    // Minimum rating
+    if (minRating != null && minRating > 0) {
+      queryBuilder.andWhere('product.rating >= :minRating', { minRating });
+    }
+
+    // In stock only
+    if (inStock === true) {
+      queryBuilder.andWhere('product.stock > 0');
+    }
+
     // Apply sorting
     switch (sortBy) {
+      case 'trending':
+        // Popular first: by sales, then views, then newest
+        queryBuilder
+          .orderBy('product.sales', 'DESC')
+          .addOrderBy('product.views', 'DESC')
+          .addOrderBy('product.createdAt', 'DESC');
+        break;
       case 'newest':
         queryBuilder.orderBy('product.createdAt', 'DESC');
         break;
@@ -1038,7 +1078,10 @@ export class ProductsService {
         queryBuilder.orderBy('product.name', 'DESC');
         break;
       default:
-        queryBuilder.orderBy('product.createdAt', 'DESC');
+        queryBuilder
+          .orderBy('product.sales', 'DESC')
+          .addOrderBy('product.views', 'DESC')
+          .addOrderBy('product.createdAt', 'DESC');
     }
 
     const [products, total] = await queryBuilder.getManyAndCount();
