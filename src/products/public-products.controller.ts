@@ -54,6 +54,7 @@ export class PublicProductsController {
     name: 'sortBy',
     required: false,
     enum: [
+      'trending',
       'newest',
       'oldest',
       'price_asc',
@@ -61,7 +62,7 @@ export class PublicProductsController {
       'name_asc',
       'name_desc',
     ],
-    description: 'Sort order (default: newest)',
+    description: 'Sort order (default: trending = by popularity)',
   })
   @ApiResponse({
     status: 200,

@@ -71,6 +71,42 @@ export class OrdersService {
     this.logger = new Logger(OrdersService.name);
   }
 
+  /**
+   * Check if sale price is still valid (not expired) at order time.
+   * Ensures orders are not placed with discounted price after discount has expired.
+   */
+  private isSalePriceValid(
+    salePrice: number | null | undefined,
+    salePriceExpiresAt: Date | null | undefined,
+  ): boolean {
+    if (!salePrice) return false;
+    if (!salePriceExpiresAt) return true;
+    return new Date() < new Date(salePriceExpiresAt);
+  }
+
+  /**
+   * Get effective price for order: sale price only if not expired, otherwise regular/legacy price.
+   */
+  private getEffectiveProductPrice(product: Product): number {
+    const salePrice =
+      product.salePrice != null ? parseFloat(product.salePrice.toString()) : null;
+    const regularPrice =
+      product.regularPrice != null
+        ? parseFloat(product.regularPrice.toString())
+        : null;
+    const legacyPrice =
+      product.price != null ? parseFloat(product.price.toString()) : null;
+    const basePrice =
+      product.basePrice != null
+        ? parseFloat(product.basePrice.toString())
+        : null;
+
+    if (this.isSalePriceValid(salePrice, product.salePriceExpiresAt)) {
+      return salePrice!;
+    }
+    return regularPrice ?? basePrice ?? legacyPrice ?? 0;
+  }
+
   async findAll(
     sellerId: string,
     query: OrderQueryDto,
@@ -666,13 +702,11 @@ export class OrdersService {
           );
         }
 
-        // Use variant price if set, otherwise use product base price
+        // Use variant price if set, otherwise use product effective price (sale only if not expired)
         basePrice =
           variant.price !== null && variant.price !== undefined
             ? parseFloat(variant.price.toString())
-            : product.basePrice !== null && product.basePrice !== undefined
-              ? parseFloat(product.basePrice.toString())
-              : parseFloat(product.price.toString());
+            : this.getEffectiveProductPrice(product);
 
         variantCombination = variant.combination;
 
@@ -692,6 +726,7 @@ export class OrdersService {
         if (product.stock === 0) {
           product.status = 'out_of_stock' as any;
         }
+        product.sales = (product.sales ?? 0) + itemDto.quantity;
         await this.productsRepository.save(product);
       } else {
         // Product without variants - variantId should not be provided
@@ -707,17 +742,15 @@ export class OrdersService {
           );
         }
 
-        // Get base price - use basePrice if set, otherwise use price (for backward compatibility)
-        basePrice =
-          product.basePrice !== null && product.basePrice !== undefined
-            ? parseFloat(product.basePrice.toString())
-            : parseFloat(product.price.toString());
+        // Get effective price: sale price only if discount not expired, otherwise regular/legacy price
+        basePrice = this.getEffectiveProductPrice(product);
 
         // Update product stock
         product.stock -= itemDto.quantity;
         if (product.stock === 0) {
           product.status = 'out_of_stock' as any;
         }
+        product.sales = (product.sales ?? 0) + itemDto.quantity;
         await this.productsRepository.save(product);
       }
 

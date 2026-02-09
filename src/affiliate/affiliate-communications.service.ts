@@ -101,7 +101,7 @@ export class AffiliateCommunicationsService {
       })
       .andWhere('product.approved = :approved', { approved: true })
       .groupBy('product.id')
-      .orderBy('totalQuantity', 'DESC')
+      .orderBy('SUM(orderItem.quantity)', 'DESC')
       .limit(limit)
       .getRawMany();
 
