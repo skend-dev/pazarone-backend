@@ -1050,13 +1050,20 @@ export class ProductsService {
       queryBuilder.andWhere('product.stock > 0');
     }
 
-    // Apply sorting
+    // Apply sorting ('popular' is alias for trending; 'sales' orders by sales only)
+    const trendOrder = () =>
+      queryBuilder
+        .orderBy('product.sales', 'DESC')
+        .addOrderBy('product.views', 'DESC')
+        .addOrderBy('product.createdAt', 'DESC');
     switch (sortBy) {
+      case 'popular':
       case 'trending':
-        // Popular first: by sales, then views, then newest
+        trendOrder();
+        break;
+      case 'sales':
         queryBuilder
           .orderBy('product.sales', 'DESC')
-          .addOrderBy('product.views', 'DESC')
           .addOrderBy('product.createdAt', 'DESC');
         break;
       case 'newest':
@@ -1078,10 +1085,7 @@ export class ProductsService {
         queryBuilder.orderBy('product.name', 'DESC');
         break;
       default:
-        queryBuilder
-          .orderBy('product.sales', 'DESC')
-          .addOrderBy('product.views', 'DESC')
-          .addOrderBy('product.createdAt', 'DESC');
+        trendOrder();
     }
 
     const [products, total] = await queryBuilder.getManyAndCount();
@@ -1124,6 +1128,53 @@ export class ProductsService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  /**
+   * Get all product sections for the landing page in one go.
+   * Runs 5 queries in parallel so each section has distinct products and intent.
+   */
+  async getLanding(): Promise<{
+    flashDeals: Product[];
+    trending: Product[];
+    hotDeals: Product[];
+    bestSellers: Product[];
+    newArrivals: Product[];
+  }> {
+    const [flashRes, trendingRes, hotDealsRes, bestSellersRes, newArrivalsRes] =
+      await Promise.all([
+        this.findAllPublic({
+          limit: 4,
+          sortBy: 'popular',
+          onSale: true,
+        }),
+        this.findAllPublic({
+          limit: 8,
+          sortBy: 'popular',
+          // no onSale so trending is different from flash
+        }),
+        this.findAllPublic({
+          limit: 8,
+          sortBy: 'newest',
+          onSale: true,
+        }),
+        this.findAllPublic({
+          limit: 10,
+          sortBy: 'sales',
+        }),
+        this.findAllPublic({
+          limit: 6,
+          sortBy: 'newest',
+        }),
+      ]);
+
+    return {
+      flashDeals: flashRes.products,
+      trending: trendingRes.products,
+      hotDeals: hotDealsRes.products,
+      bestSellers: bestSellersRes.products,
+      newArrivals: newArrivalsRes.products,
     };
   }
 
