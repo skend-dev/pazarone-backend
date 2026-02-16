@@ -8,6 +8,7 @@ import { SellerSettingsService } from './seller-settings.service';
 import { SellerSettingsController } from './seller-settings.controller';
 import { SellerPerformanceController } from './seller-performance.controller';
 import { PublicSellerController } from './public-seller.controller';
+import { PublicSellersController } from './public-sellers.controller';
 import { TelegramNotificationService } from './telegram-notification.service';
 import { SellerSettings } from './entities/seller-settings.entity';
 import { Order } from '../orders/entities/order.entity';
@@ -30,6 +31,7 @@ import { forwardRef } from '@nestjs/common';
     SellerSettingsController,
     SellerPerformanceController,
     PublicSellerController,
+    PublicSellersController,
   ],
   providers: [
     SellerDashboardService,

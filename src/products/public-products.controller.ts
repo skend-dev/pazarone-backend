@@ -55,6 +55,8 @@ export class PublicProductsController {
     required: false,
     enum: [
       'trending',
+      'popular',
+      'sales',
       'newest',
       'oldest',
       'price_asc',
@@ -62,7 +64,8 @@ export class PublicProductsController {
       'name_asc',
       'name_desc',
     ],
-    description: 'Sort order (default: trending = by popularity)',
+    description:
+      'Sort order (trending/popular = by popularity; sales = by sales count)',
   })
   @ApiResponse({
     status: 200,
@@ -135,6 +138,30 @@ export class PublicProductsController {
   })
   findAll(@Query() query: PublicProductQueryDto) {
     return this.productsService.findAllPublic(query);
+  }
+
+  @Get('landing')
+  @ApiOperation({
+    summary: 'Get landing page product sections',
+    description:
+      'Returns all product sections for the landing page in one request: flashDeals (4), trending (8), hotDeals (8), bestSellers (10), newArrivals (6). No authentication required.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Landing sections retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        flashDeals: { type: 'array', items: { type: 'object' } },
+        trending: { type: 'array', items: { type: 'object' } },
+        hotDeals: { type: 'array', items: { type: 'object' } },
+        bestSellers: { type: 'array', items: { type: 'object' } },
+        newArrivals: { type: 'array', items: { type: 'object' } },
+      },
+    },
+  })
+  getLanding() {
+    return this.productsService.getLanding();
   }
 
   @Get(':id')

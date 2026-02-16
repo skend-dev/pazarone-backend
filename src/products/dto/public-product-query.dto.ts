@@ -41,14 +41,34 @@ export class PublicProductQueryDto {
   @IsUUID()
   sellerId?: string;
 
-  @ApiPropertyOptional({ 
-    description: 'Sort order (trending = by popularity: sales and views)', 
-    enum: ['trending', 'newest', 'oldest', 'price_asc', 'price_desc', 'name_asc', 'name_desc'],
-    example: 'trending'
+  @ApiPropertyOptional({
+    description:
+      'Sort order (trending/popular = by popularity; sales = by sales count)',
+    enum: [
+      'trending',
+      'popular',
+      'sales',
+      'newest',
+      'oldest',
+      'price_asc',
+      'price_desc',
+      'name_asc',
+      'name_desc',
+    ],
+    example: 'trending',
   })
   @IsOptional()
   @IsString()
-  sortBy?: 'trending' | 'newest' | 'oldest' | 'price_asc' | 'price_desc' | 'name_asc' | 'name_desc' = 'trending';
+  sortBy?:
+    | 'trending'
+    | 'popular'
+    | 'sales'
+    | 'newest'
+    | 'oldest'
+    | 'price_asc'
+    | 'price_desc'
+    | 'name_asc'
+    | 'name_desc' = 'trending';
 
   @ApiPropertyOptional({ 
     description: 'Filter products on sale (true = only products with active sale price, false = only products without sale)', 
