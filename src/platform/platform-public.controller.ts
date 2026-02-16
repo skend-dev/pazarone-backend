@@ -4,12 +4,19 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { PlatformSettingsService } from './platform-settings.service';
+import { User, UserType } from '../users/entities/user.entity';
 
 @ApiTags('platform-settings')
 @Controller('platform-settings')
 export class PlatformPublicController {
-  constructor(private readonly platformSettingsService: PlatformSettingsService) {}
+  constructor(
+    private readonly platformSettingsService: PlatformSettingsService,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -54,7 +61,7 @@ export class PlatformPublicController {
   @Get('affiliate-commission-range')
   @ApiOperation({
     summary: 'Get affiliate commission range',
-    description: 'Returns the minimum and maximum affiliate commission percentages - no authentication required',
+    description: 'Returns the minimum and maximum affiliate commission percentages and the number of affiliate users - no authentication required',
   })
   @ApiResponse({
     status: 200,
@@ -64,11 +71,15 @@ export class PlatformPublicController {
       properties: {
         affiliateCommissionMin: { type: 'number', example: 0 },
         affiliateCommissionMax: { type: 'number', example: 100 },
+        affiliatesCount: { type: 'number', example: 500 },
       },
     },
   })
   async getAffiliateCommissionRange() {
-    const settings = await this.platformSettingsService.getSettings();
+    const [settings, affiliatesCount] = await Promise.all([
+      this.platformSettingsService.getSettings(),
+      this.usersRepository.count({ where: { userType: UserType.AFFILIATE } }),
+    ]);
     return {
       affiliateCommissionMin: parseFloat(
         settings.affiliateCommissionMin.toString(),
@@ -76,6 +87,7 @@ export class PlatformPublicController {
       affiliateCommissionMax: parseFloat(
         settings.affiliateCommissionMax.toString(),
       ),
+      affiliatesCount,
     };
   }
 }
