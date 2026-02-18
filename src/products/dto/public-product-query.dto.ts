@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min, IsUUID, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsUUID, IsBoolean, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -43,7 +43,7 @@ export class PublicProductQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Sort order (trending/popular = by popularity; sales = by sales count)',
+      'Sort order (trending/popular = by popularity; sales = by sales count; commission_asc/desc = by affiliate commission)',
     enum: [
       'trending',
       'popular',
@@ -54,6 +54,8 @@ export class PublicProductQueryDto {
       'price_desc',
       'name_asc',
       'name_desc',
+      'commission_asc',
+      'commission_desc',
     ],
     example: 'trending',
   })
@@ -68,7 +70,9 @@ export class PublicProductQueryDto {
     | 'price_asc'
     | 'price_desc'
     | 'name_asc'
-    | 'name_desc' = 'trending';
+    | 'name_desc'
+    | 'commission_asc'
+    | 'commission_desc' = 'trending';
 
   @ApiPropertyOptional({ 
     description: 'Filter products on sale (true = only products with active sale price, false = only products without sale)', 
@@ -110,5 +114,29 @@ export class PublicProductQueryDto {
   @IsOptional()
   @IsString()
   categories?: string;
+
+  @ApiPropertyOptional({
+    description: 'Minimum affiliate commission percentage (for affiliate product listing). Only products with affiliateCommission >= this value are returned.',
+    example: 5,
+    minimum: 0,
+    maximum: 100,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(100)
+  minCommission?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum affiliate commission percentage. Only products with affiliateCommission <= this value are returned. Ignored if less than minCommission.',
+    example: 10,
+    minimum: 0,
+    maximum: 100,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(100)
+  maxCommission?: number;
 }
 

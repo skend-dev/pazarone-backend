@@ -965,6 +965,8 @@ export class ProductsService {
       minRating,
       inStock,
       categories: categoriesParam,
+      minCommission,
+      maxCommission,
     } = query;
     const skip = (page - 1) * limit;
 
@@ -1050,6 +1052,22 @@ export class ProductsService {
       queryBuilder.andWhere('product.stock > 0');
     }
 
+    // Affiliate commission range (for affiliate product listing)
+    if (minCommission != null && minCommission > 0) {
+      queryBuilder.andWhere('product.affiliateCommission >= :minCommission', {
+        minCommission,
+      });
+    }
+    if (
+      maxCommission != null &&
+      maxCommission <= 100 &&
+      (minCommission == null || maxCommission >= minCommission)
+    ) {
+      queryBuilder.andWhere('product.affiliateCommission <= :maxCommission', {
+        maxCommission,
+      });
+    }
+
     // Apply sorting ('popular' is alias for trending; 'sales' orders by sales only)
     const trendOrder = () =>
       queryBuilder
@@ -1083,6 +1101,12 @@ export class ProductsService {
         break;
       case 'name_desc':
         queryBuilder.orderBy('product.name', 'DESC');
+        break;
+      case 'commission_asc':
+        queryBuilder.orderBy('product.affiliateCommission', 'ASC');
+        break;
+      case 'commission_desc':
+        queryBuilder.orderBy('product.affiliateCommission', 'DESC');
         break;
       default:
         trendOrder();
