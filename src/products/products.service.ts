@@ -772,6 +772,12 @@ export class ProductsService {
 
     Object.assign(product, productData);
 
+    // Explicitly apply categoryId when provided so the loaded category relation does not override it on save
+    if (updateProductDto.categoryId !== undefined) {
+      product.categoryId = updateProductDto.categoryId ?? null;
+      product.category = undefined as any; // Clear relation so TypeORM persists categoryId
+    }
+
     // Prevent frozen sellers from activating products (status should not change to ACTIVE)
     // Allow status to remain ACTIVE if it was already ACTIVE (don't force deactivate existing active products)
     if (
