@@ -131,4 +131,14 @@ export class Product {
 
   @Column({ default: false })
   hasVariants: boolean; // Whether this product has variants
+
+  // Optional per-product delivery: free, paid (with price per country), or not set
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  shippingType: 'free' | 'paid' | null; // null = shipping price not included
+
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  shippingPriceNorthMacedonia: number | null; // MKD - only when shippingType = 'paid'
+
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  shippingPriceKosovo: number | null; // EUR - only when shippingType = 'paid'
 }

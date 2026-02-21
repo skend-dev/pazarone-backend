@@ -141,6 +141,34 @@ export class CreateProductDto {
   affiliateCommission?: number;
 
   @ApiPropertyOptional({
+    description: 'Delivery: "free", "paid" (set prices per country below), or omit for "shipping not included"',
+    enum: ['free', 'paid'],
+  })
+  @IsString()
+  @IsOptional()
+  shippingType?: 'free' | 'paid';
+
+  @ApiPropertyOptional({
+    description: 'Shipping price for North Macedonia (MKD) - only when shippingType is "paid"',
+    example: 150,
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  shippingPriceNorthMacedonia?: number;
+
+  @ApiPropertyOptional({
+    description: 'Shipping price for Kosovo (EUR) - only when shippingType is "paid"',
+    example: 5,
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  shippingPriceKosovo?: number;
+
+  @ApiPropertyOptional({
     description: 'Variant attributes (e.g., Size, Color) - required if variants are provided',
     type: [CreateVariantAttributeDto],
   })

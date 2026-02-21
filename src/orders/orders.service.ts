@@ -381,6 +381,154 @@ export class OrdersService {
     return this.formatOrder(updatedOrder);
   }
 
+  /**
+   * Update order status as super admin. No seller ownership or status transition checks.
+   */
+  async updateStatusByAdmin(
+    id: string,
+    updateOrderStatusDto: UpdateOrderStatusDto,
+  ): Promise<any> {
+    const order = await this.ordersRepository.findOne({
+      where: { id },
+      relations: ['customer', 'items', 'items.product'],
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    order.status = updateOrderStatusDto.status;
+    if (updateOrderStatusDto.trackingId !== undefined) {
+      order.trackingId = updateOrderStatusDto.trackingId;
+    }
+    if (updateOrderStatusDto.statusExplanation !== undefined) {
+      order.statusExplanation = updateOrderStatusDto.statusExplanation;
+    } else if (
+      updateOrderStatusDto.status === OrderStatus.CANCELLED ||
+      updateOrderStatusDto.status === OrderStatus.RETURNED
+    ) {
+      order.statusExplanation = null;
+    }
+
+    const updatedOrder = await this.ordersRepository.save(order);
+    const sellerId = order.sellerId;
+
+    if (order.affiliateId) {
+      try {
+        await this.affiliateService.updateCommissionStatus(
+          order.id,
+          updateOrderStatusDto.status,
+        );
+      } catch (error) {
+        console.error('Failed to update affiliate commission status:', error);
+      }
+    }
+
+    if (
+      updateOrderStatusDto.status === OrderStatus.CANCELLED ||
+      updateOrderStatusDto.status === OrderStatus.RETURNED
+    ) {
+      try {
+        const sellerSettings =
+          await this.sellerSettingsService.getSellerShippingCountries(sellerId);
+        if (
+          sellerSettings?.telegramChatId &&
+          sellerSettings.notificationsOrders
+        ) {
+          const orderForNotification = await this.ordersRepository.findOne({
+            where: { id: updatedOrder.id },
+            relations: ['customer', 'items'],
+          });
+          if (orderForNotification) {
+            await this.telegramNotificationService.sendOrderNotification(
+              sellerSettings.telegramChatId,
+              orderForNotification,
+            );
+          }
+        }
+      } catch (error) {
+        console.error(
+          `Failed to send Telegram notification for order ${updatedOrder.orderNumber} status change:`,
+          error,
+        );
+      }
+    }
+
+    try {
+      let notificationType: NotificationType;
+      if (updateOrderStatusDto.status === OrderStatus.CANCELLED) {
+        notificationType = NotificationType.ORDER_CANCELLED;
+      } else if (updateOrderStatusDto.status === OrderStatus.DELIVERED) {
+        notificationType = NotificationType.ORDER_COMPLETED;
+      } else {
+        notificationType = NotificationType.ORDER_UPDATED;
+      }
+      const notificationMetadata = {
+        newStatus: updateOrderStatusDto.status,
+        trackingId: updateOrderStatusDto.trackingId,
+      };
+      if (updatedOrder.customerId && updatedOrder.customerId !== sellerId) {
+        const customerNotification =
+          await this.notificationsService.createOrderNotification(
+            updatedOrder.customerId,
+            notificationType,
+            updatedOrder.id,
+            updatedOrder.orderNumber,
+            notificationMetadata,
+            true,
+          );
+        await this.notificationsGateway.sendNotificationToUser(
+          updatedOrder.customerId,
+          customerNotification,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `Failed to send web notification for order ${updatedOrder.orderNumber} status change:`,
+        error,
+      );
+    }
+
+    try {
+      const customer = await this.usersRepository.findOne({
+        where: { id: updatedOrder.customerId },
+      });
+      if (customer?.email) {
+        if (
+          updateOrderStatusDto.status === OrderStatus.IN_TRANSIT ||
+          updateOrderStatusDto.status === OrderStatus.DELIVERED
+        ) {
+          await this.emailService.sendShippingNotification(
+            customer.email,
+            updatedOrder.orderNumber,
+            updateOrderStatusDto.status,
+            updateOrderStatusDto.trackingId || undefined,
+          );
+        }
+        if (
+          updateOrderStatusDto.status === OrderStatus.CANCELLED ||
+          updateOrderStatusDto.status === OrderStatus.RETURNED
+        ) {
+          await this.emailService.sendOrderCancellationOrReturn(
+            customer.email,
+            updatedOrder.orderNumber,
+            updateOrderStatusDto.status === OrderStatus.CANCELLED
+              ? 'cancelled'
+              : 'returned',
+            updatedOrder.statusExplanation || undefined,
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Failed to send email notification for order ${updatedOrder.orderNumber} status change:`,
+        error,
+      );
+    }
+
+    return this.formatOrder(updatedOrder);
+  }
+
   // Generate unique order number
   private generateOrderNumber(): string {
     const timestamp = Date.now().toString(36).toUpperCase();
