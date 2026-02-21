@@ -260,6 +260,9 @@ export class ProductsService {
       hasVariants,
       // If has variants, stock will be calculated from variants
       stock: hasVariants ? 0 : createProductDto.stock,
+      shippingType: createProductDto.shippingType ?? null,
+      shippingPriceNorthMacedonia: createProductDto.shippingPriceNorthMacedonia ?? null,
+      shippingPriceKosovo: createProductDto.shippingPriceKosovo ?? null,
     });
 
     const savedProduct = await this.productsRepository.save(product);

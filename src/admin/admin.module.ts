@@ -29,12 +29,14 @@ import { SellerModule } from '../seller/seller.module';
 import { ProductsModule } from '../products/products.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
+import { OrdersModule } from '../orders/orders.module';
 import { forwardRef } from '@nestjs/common';
 
 @Module({
   imports: [
     PlatformModule,
     SellerModule,
+    forwardRef(() => OrdersModule),
     forwardRef(() => ProductsModule),
     forwardRef(() => NotificationsModule),
     forwardRef(() => AuthModule),

@@ -1,13 +1,16 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Put, Body } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiParam,
 } from '@nestjs/swagger';
 import { AdminOrdersService } from './admin-orders.service';
+import { OrdersService } from '../orders/orders.service';
 import { AdminQueryDto } from './dto/admin-query.dto';
+import { UpdateOrderStatusDto } from '../orders/dto/update-order-status.dto';
 import { OrderStatus } from '../orders/entities/order.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
@@ -17,7 +20,10 @@ import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
 @Controller('admin/orders')
 @UseGuards(JwtAuthGuard, AdminAuthGuard)
 export class AdminOrdersController {
-  constructor(private readonly adminOrdersService: AdminOrdersService) {}
+  constructor(
+    private readonly adminOrdersService: AdminOrdersService,
+    private readonly ordersService: OrdersService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -71,6 +77,21 @@ export class AdminOrdersController {
   @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
   findOne(@Param('id') id: string) {
     return this.adminOrdersService.findOne(id);
+  }
+
+  @Put(':id/status')
+  @ApiOperation({
+    summary: 'Update order status (super admin)',
+    description: 'Set order to any status without transition limits. Admin only.',
+  })
+  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiResponse({ status: 200, description: 'Order status updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
+    return this.ordersService.updateStatusByAdmin(id, dto);
   }
 }
 

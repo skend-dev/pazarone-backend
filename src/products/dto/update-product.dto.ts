@@ -81,6 +81,20 @@ export class UpdateProductDto {
   @IsOptional()
   affiliateCommission?: number;
 
+  @IsString()
+  @IsOptional()
+  shippingType?: 'free' | 'paid' | null;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  shippingPriceNorthMacedonia?: number | null;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  shippingPriceKosovo?: number | null;
+
   @ApiPropertyOptional({
     description: 'Variant attributes (e.g., Size, Color) - required if variants are provided',
     type: [CreateVariantAttributeDto],
