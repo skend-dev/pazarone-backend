@@ -1117,6 +1117,12 @@ export class ProductsService {
       case 'commission_desc':
         queryBuilder.orderBy('product.affiliateCommission', 'DESC');
         break;
+      case 'stock_asc':
+        queryBuilder.orderBy('product.stock', 'ASC');
+        break;
+      case 'stock_desc':
+        queryBuilder.orderBy('product.stock', 'DESC');
+        break;
       default:
         trendOrder();
     }

@@ -176,20 +176,24 @@ export class AffiliateService {
     }
   }
 
-  // Get product-specific clicks for an affiliate
+  // Get product-specific clicks for an affiliate (includes product name from join)
   async getProductClicks(affiliateId: string): Promise<
     Array<{
       productId: string;
       clicks: number;
+      productName?: string;
     }>
   > {
     const productClicks = await this.affiliateReferralClickRepository
       .createQueryBuilder('click')
+      .leftJoin('click.product', 'product')
       .select('click.productId', 'productId')
       .addSelect('COUNT(*)', 'clicks')
+      .addSelect('product.name', 'productName')
       .where('click.affiliateId = :affiliateId', { affiliateId })
       .andWhere('click.productId IS NOT NULL')
       .groupBy('click.productId')
+      .addGroupBy('product.name')
       .having('COUNT(*) > 0')
       .orderBy('clicks', 'DESC')
       .getRawMany();
@@ -197,6 +201,7 @@ export class AffiliateService {
     return productClicks.map((item) => ({
       productId: item.productId,
       clicks: parseInt(item.clicks, 10),
+      productName: item.productName || 'Unknown Product',
     }));
   }
 
