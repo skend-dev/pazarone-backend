@@ -1041,13 +1041,20 @@ export class ProductsService {
       }
     }
 
-    // Price range (effective price: sale if valid, else regular/base/price)
+    // Price range (effective price in MKD: sale if valid, else regular/base/price; convert EUR to MKD for filtering)
     if (minPrice != null || maxPrice != null) {
       const priceMin = minPrice ?? 0;
       const priceMax = maxPrice ?? 999999999;
+      const exchangeRate = this.currencyService.getExchangeRate();
       queryBuilder.andWhere(
-        `(CASE WHEN (product.salePrice IS NOT NULL AND (product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :priceNow)) THEN product.salePrice ELSE COALESCE(product.regularPrice, product.basePrice, product.price) END) BETWEEN :priceMin AND :priceMax`,
-        { priceNow: new Date(), priceMin, priceMax },
+        `(
+          CASE
+            WHEN COALESCE(product.baseCurrency, 'MKD') = 'EUR'
+            THEN (CASE WHEN (product.salePrice IS NOT NULL AND (product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :priceNow)) THEN product.salePrice ELSE COALESCE(product.regularPrice, product.basePrice, product.price) END) * :exchangeRate
+            ELSE (CASE WHEN (product.salePrice IS NOT NULL AND (product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :priceNow)) THEN product.salePrice ELSE COALESCE(product.regularPrice, product.basePrice, product.price) END)
+          END
+        ) BETWEEN :priceMin AND :priceMax`,
+        { priceNow: new Date(), priceMin, priceMax, exchangeRate },
       );
     }
 
@@ -1217,7 +1224,7 @@ export class ProductsService {
     };
   }
 
-  async findOnePublic(id: string): Promise<Product> {
+  async findOnePublic(id: string, incrementView = true): Promise<Product> {
     const product = await this.productsRepository.findOne({
       where: { id, status: ProductStatus.ACTIVE, approved: true },
       relations: [
@@ -1233,8 +1240,10 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    // Increment view count
-    await this.productsRepository.increment({ id }, 'views', 1);
+    // Increment view count only for actual page views (skip for metadata/SEO fetches to avoid duplicates)
+    if (incrementView) {
+      await this.productsRepository.increment({ id }, 'views', 1);
+    }
 
     // Reload product to get updated views count
     let updatedProduct = await this.productsRepository.findOne({
