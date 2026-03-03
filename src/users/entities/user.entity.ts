@@ -49,6 +49,10 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   market: string | null; // 'MK' for North Macedonia, 'KS' for Kosovo
 
+  /** Ambassador who referred this seller (when signing up via ?ref=CODE) */
+  @Column('uuid', { nullable: true })
+  referredByAffiliateId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

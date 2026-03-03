@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import type { StringValue } from 'ms';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
+import { AffiliateService } from '../affiliate/affiliate.service';
 import { User, UserType } from '../users/entities/user.entity';
 import { IdentityProvider } from '../users/entities/user-identity.entity';
 import { RegisterDto } from './dto/register.dto';
@@ -40,6 +41,7 @@ function normalizeFirebaseProvider(
 export class AuthService {
   constructor(
     private usersService: UsersService,
+    private affiliateService: AffiliateService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private emailVerificationService: EmailVerificationService,
@@ -88,6 +90,21 @@ export class AuthService {
     }
     // If email is already verified, no token is required
 
+    // Resolve ambassador for seller referral
+    let referredByAffiliateId: string | undefined;
+    if (
+      registerDto.userType === UserType.SELLER &&
+      registerDto.referralCode?.trim()
+    ) {
+      const ambassador =
+        await this.affiliateService.getAmbassadorByReferralCode(
+          registerDto.referralCode.trim(),
+        );
+      if (ambassador) {
+        referredByAffiliateId = ambassador.id;
+      }
+    }
+
     // Create user account
     const user = await this.usersService.create({
       email: registerDto.email,
@@ -95,6 +112,7 @@ export class AuthService {
       password: registerDto.password,
       userType: registerDto.userType,
       market: registerDto.market,
+      referredByAffiliateId,
     });
 
     return this.generateTokens(user);
@@ -193,6 +211,7 @@ export class AuthService {
     _device?: { platform?: 'ios' | 'android' | 'web'; pushToken?: string },
     userType?: 'customer' | 'seller' | 'affiliate',
     market?: 'MK' | 'KS',
+    referralCode?: string,
   ) {
     if (!this.firebaseAdmin.isConfigured()) {
       throw new BadRequestException(
@@ -261,12 +280,28 @@ export class AuthService {
         : userType === 'affiliate'
           ? UserType.AFFILIATE
           : UserType.CUSTOMER;
+
+    let referredByAffiliateId: string | null = null;
+    if (
+      newUserType === UserType.SELLER &&
+      referralCode?.trim()
+    ) {
+      const ambassador =
+        await this.affiliateService.getAmbassadorByReferralCode(
+          referralCode.trim(),
+        );
+      if (ambassador) {
+        referredByAffiliateId = ambassador.id;
+      }
+    }
+
     const newUser = await this.usersService.createOAuthUser({
       email,
       name,
       avatarUrl: picture,
       userType: newUserType,
       market: newUserType === UserType.SELLER ? (market ?? null) : null,
+      referredByAffiliateId,
     });
     await this.usersService.addIdentity(
       newUser.id,
@@ -371,12 +406,26 @@ export class AuthService {
     user: User,
     userType: 'seller' | 'affiliate',
     market?: 'MK' | 'KS',
+    referralCode?: string,
   ) {
     const type = userType === 'seller' ? UserType.SELLER : UserType.AFFILIATE;
+
+    let referredByAffiliateId: string | undefined;
+    if (type === UserType.SELLER && referralCode?.trim()) {
+      const ambassador =
+        await this.affiliateService.getAmbassadorByReferralCode(
+          referralCode.trim(),
+        );
+      if (ambassador) {
+        referredByAffiliateId = ambassador.id;
+      }
+    }
+
     const updatedUser = await this.usersService.upgradeRole(
       user.id,
       type,
       market,
+      referredByAffiliateId,
     );
     const providers = await this.usersService.getProvidersForUser(
       updatedUser.id,

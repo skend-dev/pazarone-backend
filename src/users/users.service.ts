@@ -22,6 +22,7 @@ export interface CreateOAuthUserOptions {
   avatarUrl?: string | null;
   userType?: UserType;
   market?: 'MK' | 'KS' | null;
+  referredByAffiliateId?: string | null;
 }
 
 @Injectable()
@@ -40,10 +41,12 @@ export class UsersService {
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+    const { referredByAffiliateId, ...rest } = createUserDto;
     const user = this.usersRepository.create({
-      ...createUserDto,
+      ...rest,
       password: hashedPassword,
       hasPlatformPassword: true,
+      referredByAffiliateId: referredByAffiliateId ?? null,
     });
 
     return this.usersRepository.save(user);
@@ -114,6 +117,7 @@ export class UsersService {
       avatarUrl = null,
       userType = UserType.CUSTOMER,
       market = null,
+      referredByAffiliateId = null,
     } = options;
     if (userType === UserType.SELLER && !market) {
       throw new BadRequestException(
@@ -136,6 +140,7 @@ export class UsersService {
       avatarUrl,
       market: userType === UserType.SELLER ? market : null,
       hasPlatformPassword: false,
+      referredByAffiliateId: referredByAffiliateId ?? null,
     });
     return this.usersRepository.save(user);
   }
@@ -185,6 +190,7 @@ export class UsersService {
     userId: string,
     userType: UserType.SELLER | UserType.AFFILIATE,
     market?: 'MK' | 'KS',
+    referredByAffiliateId?: string | null,
   ): Promise<User> {
     const user = await this.findOne(userId);
     if (user.userType !== UserType.CUSTOMER) {
@@ -201,6 +207,9 @@ export class UsersService {
     }
     user.userType = userType;
     user.market = userType === UserType.SELLER ? (market ?? null) : null;
+    if (userType === UserType.SELLER && referredByAffiliateId != null) {
+      user.referredByAffiliateId = referredByAffiliateId;
+    }
     return this.usersRepository.save(user);
   }
 }

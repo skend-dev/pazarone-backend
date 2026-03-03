@@ -26,6 +26,7 @@ import { AdminBroadcastService } from './admin-broadcast.service';
 import { AdminBroadcastController } from './admin-broadcast.controller';
 import { PlatformModule } from '../platform/platform.module';
 import { SellerModule } from '../seller/seller.module';
+import { AffiliateModule } from '../affiliate/affiliate.module';
 import { ProductsModule } from '../products/products.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
@@ -36,6 +37,7 @@ import { forwardRef } from '@nestjs/common';
   imports: [
     PlatformModule,
     SellerModule,
+    AffiliateModule,
     forwardRef(() => OrdersModule),
     forwardRef(() => ProductsModule),
     forwardRef(() => NotificationsModule),

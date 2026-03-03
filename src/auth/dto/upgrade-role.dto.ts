@@ -19,4 +19,11 @@ export class UpgradeRoleDto {
     enum: ['MK', 'KS'],
   })
   market?: 'MK' | 'KS';
+
+  @ApiPropertyOptional({
+    description: 'Ambassador referral code when becoming a seller (from ?ref=CODE link)',
+  })
+  @IsString()
+  @IsOptional()
+  referralCode?: string;
 }

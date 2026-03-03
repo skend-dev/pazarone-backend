@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -7,6 +7,7 @@ import type { StringValue } from 'ms';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
+import { AffiliateModule } from '../affiliate/affiliate.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { EmailVerification } from './entities/email-verification.entity';
 import { PasswordReset } from './entities/password-reset.entity';
@@ -17,6 +18,7 @@ import { PasswordResetService } from './services/password-reset.service';
 @Module({
   imports: [
     UsersModule,
+    forwardRef(() => AffiliateModule),
     PassportModule,
     TypeOrmModule.forFeature([EmailVerification, PasswordReset]),
     JwtModule.registerAsync({

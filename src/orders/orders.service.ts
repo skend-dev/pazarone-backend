@@ -1043,21 +1043,20 @@ export class OrdersService {
 
     const savedOrder = await this.ordersRepository.save(order);
 
-    // Create affiliate commissions if affiliate is associated
-    if (finalAffiliateId) {
-      try {
-        await this.affiliateService.createCommissionsForOrder(
-          savedOrder.id,
-          finalAffiliateId,
-        );
-      } catch (error) {
-        // Log warning but don't fail order creation
-        console.warn(
-          `Failed to create affiliate commissions for order ${savedOrder.orderNumber}:`,
-          error,
-        );
-      }
-    } else if (referralCode) {
+    // Create affiliate commissions: buyer referral and/or ambassador (seller referral)
+    try {
+      await this.affiliateService.createCommissionsForOrder(
+        savedOrder.id,
+        finalAffiliateId || undefined,
+      );
+    } catch (error) {
+      // Log warning but don't fail order creation
+      console.warn(
+        `Failed to create affiliate commissions for order ${savedOrder.orderNumber}:`,
+        error,
+      );
+    }
+    if (!finalAffiliateId && referralCode) {
       // Referral code was provided but affiliate not found/active
       console.warn(
         `Invalid referral code or inactive affiliate: ${referralCode}. Order created without commissions.`,

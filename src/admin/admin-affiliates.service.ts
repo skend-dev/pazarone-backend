@@ -15,7 +15,11 @@ import { AffiliatePaymentMethod } from '../affiliate/entities/affiliate-payment-
 import { AdminQueryDto } from './dto/admin-query.dto';
 import { VerifyPaymentMethodDto } from './dto/verify-payment-method.dto';
 import { RejectPaymentMethodDto } from './dto/reject-payment-method.dto';
+import { PromoteToAmbassadorDto } from './dto/promote-ambassador.dto';
+import { UpdateAffiliateCommissionDto } from './dto/update-affiliate-commission.dto';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { PlatformSettingsService } from '../platform/platform-settings.service';
+import { AffiliateService } from '../affiliate/affiliate.service';
 
 @Injectable()
 export class AdminAffiliatesService {
@@ -30,6 +34,8 @@ export class AdminAffiliatesService {
     private affiliateWithdrawalRepository: Repository<AffiliateWithdrawal>,
     @InjectRepository(AffiliatePaymentMethod)
     private affiliatePaymentMethodRepository: Repository<AffiliatePaymentMethod>,
+    private platformSettingsService: PlatformSettingsService,
+    private affiliateService: AffiliateService,
   ) {}
 
   async findAll(query: AdminQueryDto) {
@@ -86,11 +92,29 @@ export class AdminAffiliatesService {
             }),
           ]);
 
+        const referredSellersCount = referral?.isAmbassador
+          ? await this.usersRepository.count({
+              where: { referredByAffiliateId: user.id },
+            })
+          : 0;
+
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           referralCode: referral?.referralCode || null,
+          isAmbassador: referral?.isAmbassador ?? false,
+          buyerCommissionPercent: referral?.buyerCommissionPercent != null
+            ? parseFloat(referral.buyerCommissionPercent.toString())
+            : null,
+          sellerReferralCommissionPercent:
+            referral?.sellerReferralCommissionPercent != null
+              ? parseFloat(referral.sellerReferralCommissionPercent.toString())
+              : null,
+          minWithdrawalThreshold: referral?.minWithdrawalThreshold != null
+            ? parseFloat(referral.minWithdrawalThreshold.toString())
+            : null,
+          referredSellersCount,
           totalClicks: referral?.totalClicks || 0,
           totalOrders: referral?.totalOrders || 0,
           totalEarnings: parseFloat(totalEarnings?.total || '0'),
@@ -131,6 +155,13 @@ export class AdminAffiliatesService {
       where: { affiliateId: user.id, isActive: true },
     });
 
+    const referredSellersCount =
+      referral?.isAmbassador
+        ? await this.usersRepository.count({
+            where: { referredByAffiliateId: user.id },
+          })
+        : 0;
+
     const [totalEarnings, totalCommissions, pendingWithdrawals] =
       await Promise.all([
         this.affiliateCommissionRepository
@@ -159,6 +190,18 @@ export class AdminAffiliatesService {
       name: user.name,
       email: user.email,
       referralCode: referral?.referralCode || null,
+      isAmbassador: referral?.isAmbassador ?? false,
+      buyerCommissionPercent: referral?.buyerCommissionPercent != null
+        ? parseFloat(referral.buyerCommissionPercent.toString())
+        : null,
+      sellerReferralCommissionPercent:
+        referral?.sellerReferralCommissionPercent != null
+          ? parseFloat(referral.sellerReferralCommissionPercent.toString())
+          : null,
+      minWithdrawalThreshold: referral?.minWithdrawalThreshold != null
+        ? parseFloat(referral.minWithdrawalThreshold.toString())
+        : null,
+      referredSellersCount,
       totalClicks: referral?.totalClicks || 0,
       totalOrders: referral?.totalOrders || 0,
       totalEarnings: parseFloat(totalEarnings?.total || '0'),
@@ -169,6 +212,127 @@ export class AdminAffiliatesService {
       ),
       createdAt: user.createdAt,
     };
+  }
+
+  /**
+   * Promote affiliate to ambassador and set commission settings (Super Admin only)
+   */
+  async promoteToAmbassador(
+    affiliateId: string,
+    dto: PromoteToAmbassadorDto,
+  ): Promise<void> {
+    const user = await this.usersRepository.findOne({
+      where: { id: affiliateId, userType: UserType.AFFILIATE },
+    });
+    if (!user) {
+      throw new NotFoundException('Affiliate not found');
+    }
+
+    await this.affiliateService.getOrCreateReferralCode(affiliateId);
+
+    const referral = await this.affiliateReferralRepository.findOne({
+      where: { affiliateId, isActive: true },
+    });
+    if (!referral) {
+      throw new NotFoundException('Affiliate referral not found');
+    }
+
+    const [minCommission, maxCommission] = await Promise.all([
+      this.platformSettingsService.getAffiliateCommissionMin(),
+      this.platformSettingsService.getAffiliateCommissionMax(),
+    ]);
+
+    // sellerReferralCommissionPercent = % of platform fee (0-50)
+    if (
+      dto.sellerReferralCommissionPercent < 0 ||
+      dto.sellerReferralCommissionPercent > 50
+    ) {
+      throw new BadRequestException(
+        'sellerReferralCommissionPercent must be between 0 and 50',
+      );
+    }
+    if (
+      dto.buyerCommissionPercent != null &&
+      (dto.buyerCommissionPercent < minCommission ||
+        dto.buyerCommissionPercent > maxCommission)
+    ) {
+      throw new BadRequestException(
+        `buyerCommissionPercent must be between ${minCommission} and ${maxCommission}`,
+      );
+    }
+
+    referral.isAmbassador = true;
+    referral.sellerReferralCommissionPercent = dto.sellerReferralCommissionPercent;
+    referral.buyerCommissionPercent = dto.buyerCommissionPercent ?? null;
+    referral.minWithdrawalThreshold =
+      dto.minWithdrawalThreshold != null ? dto.minWithdrawalThreshold : null;
+
+    await this.affiliateReferralRepository.save(referral);
+  }
+
+  /**
+   * Update affiliate commission overrides (ambassador settings)
+   */
+  async updateAffiliateCommission(
+    affiliateId: string,
+    dto: UpdateAffiliateCommissionDto,
+  ): Promise<void> {
+    const user = await this.usersRepository.findOne({
+      where: { id: affiliateId, userType: UserType.AFFILIATE },
+    });
+    if (!user) {
+      throw new NotFoundException('Affiliate not found');
+    }
+
+    const referral = await this.affiliateReferralRepository.findOne({
+      where: { affiliateId, isActive: true },
+    });
+    if (!referral) {
+      throw new NotFoundException('Affiliate referral not found');
+    }
+
+    const [minCommission, maxCommission] = await Promise.all([
+      this.platformSettingsService.getAffiliateCommissionMin(),
+      this.platformSettingsService.getAffiliateCommissionMax(),
+    ]);
+
+    if (dto.buyerCommissionPercent != null) {
+      if (
+        dto.buyerCommissionPercent < minCommission ||
+        dto.buyerCommissionPercent > maxCommission
+      ) {
+        throw new BadRequestException(
+          `buyerCommissionPercent must be between ${minCommission} and ${maxCommission}`,
+        );
+      }
+    }
+    if (dto.sellerReferralCommissionPercent != null) {
+      // sellerReferralCommissionPercent = % of platform fee (0-50)
+      if (
+        dto.sellerReferralCommissionPercent < 0 ||
+        dto.sellerReferralCommissionPercent > 50
+      ) {
+        throw new BadRequestException(
+          'sellerReferralCommissionPercent must be between 0 and 50',
+        );
+      }
+    }
+
+    if (dto.buyerCommissionPercent !== undefined) {
+      referral.buyerCommissionPercent = dto.buyerCommissionPercent;
+    }
+    if (dto.sellerReferralCommissionPercent !== undefined) {
+      referral.sellerReferralCommissionPercent =
+        dto.sellerReferralCommissionPercent;
+      referral.isAmbassador =
+        dto.sellerReferralCommissionPercent != null &&
+        dto.sellerReferralCommissionPercent > 0;
+    }
+    if (dto.minWithdrawalThreshold !== undefined) {
+      referral.minWithdrawalThreshold = dto.minWithdrawalThreshold;
+    }
+
+    await this.affiliateReferralRepository.save(referral);
   }
 
   /**

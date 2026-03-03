@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Body,
   Param,
   Query,
@@ -23,6 +24,8 @@ import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
 import { IsEnum, IsOptional, IsString, IsBoolean } from 'class-validator';
 import { VerifyPaymentMethodDto } from './dto/verify-payment-method.dto';
 import { RejectPaymentMethodDto } from './dto/reject-payment-method.dto';
+import { PromoteToAmbassadorDto } from './dto/promote-ambassador.dto';
+import { UpdateAffiliateCommissionDto } from './dto/update-affiliate-commission.dto';
 
 class UpdateWithdrawalStatusDto {
   @IsEnum(WithdrawalStatus)
@@ -258,6 +261,46 @@ export class AdminAffiliatesController {
     @Body() rejectDto: RejectPaymentMethodDto,
   ) {
     return this.adminAffiliatesService.rejectPaymentMethod(id, rejectDto);
+  }
+
+  @Patch(':id/ambassador')
+  @ApiOperation({
+    summary: 'Promote affiliate to ambassador',
+    description:
+      'Promote affiliate to ambassador and set seller referral commission (super admin only)',
+  })
+  @ApiResponse({ status: 200, description: 'Promoted successfully' })
+  @ApiResponse({ status: 404, description: 'Affiliate not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - admin access required',
+  })
+  promoteToAmbassador(
+    @Param('id') id: string,
+    @Body() dto: PromoteToAmbassadorDto,
+  ) {
+    return this.adminAffiliatesService.promoteToAmbassador(id, dto);
+  }
+
+  @Patch(':id/commission')
+  @ApiOperation({
+    summary: 'Update affiliate commission overrides',
+    description:
+      'Update commission percentages and withdrawal threshold (super admin only)',
+  })
+  @ApiResponse({ status: 200, description: 'Updated successfully' })
+  @ApiResponse({ status: 404, description: 'Affiliate not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - admin access required',
+  })
+  updateAffiliateCommission(
+    @Param('id') id: string,
+    @Body() dto: UpdateAffiliateCommissionDto,
+  ) {
+    return this.adminAffiliatesService.updateAffiliateCommission(id, dto);
   }
 
   @Get(':id/withdrawals')

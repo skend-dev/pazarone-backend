@@ -24,5 +24,9 @@ export class CreateUserDto {
   @IsOptional()
   @IsIn(['MK', 'KS'])
   market?: string;
+
+  @IsString()
+  @IsOptional()
+  referredByAffiliateId?: string;
 }
 

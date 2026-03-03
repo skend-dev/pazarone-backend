@@ -22,11 +22,13 @@ import { Product } from '../products/entities/product.entity';
 import { PlatformModule } from '../platform/platform.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SellerModule } from '../seller/seller.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     PlatformModule,
+    forwardRef(() => SellerModule),
     forwardRef(() => AuthModule),
     NotificationsModule,
     TypeOrmModule.forFeature([

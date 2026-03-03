@@ -21,6 +21,7 @@ import { AffiliatePaymentMethod } from './entities/affiliate-payment-method.enti
 import { PaymentMethodOtp } from './entities/payment-method-otp.entity';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
+import { SellerSettingsService } from '../seller/seller-settings.service';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { VerifyPaymentMethodOtpDto } from './dto/verify-payment-method-otp.dto';
 import { EmailService } from '../auth/services/email.service';
@@ -48,6 +49,8 @@ export class AffiliateService {
     @InjectRepository(Order)
     private ordersRepository: Repository<Order>,
     private platformSettingsService: PlatformSettingsService,
+    @Inject(forwardRef(() => SellerSettingsService))
+    private sellerSettingsService: SellerSettingsService,
     @Inject(forwardRef(() => EmailService))
     private emailService: EmailService,
   ) {}
@@ -118,6 +121,16 @@ export class AffiliateService {
   async getAffiliateByReferralCode(referralCode: string): Promise<User | null> {
     const referral = await this.affiliateReferralRepository.findOne({
       where: { referralCode, isActive: true },
+      relations: ['affiliate'],
+    });
+
+    return referral?.affiliate || null;
+  }
+
+  // Get ambassador by referral code (only for seller referral - isAmbassador must be true)
+  async getAmbassadorByReferralCode(referralCode: string): Promise<User | null> {
+    const referral = await this.affiliateReferralRepository.findOne({
+      where: { referralCode, isActive: true, isAmbassador: true },
       relations: ['affiliate'],
     });
 
@@ -205,53 +218,120 @@ export class AffiliateService {
     }));
   }
 
-  // Create commission records for an order
+  // Create commission records for an order (buyer referral and/or ambassador/seller referral)
   async createCommissionsForOrder(
     orderId: string,
-    affiliateId: string,
+    affiliateId?: string | null,
   ): Promise<void> {
     const order = await this.ordersRepository.findOne({
       where: { id: orderId },
-      relations: ['items', 'items.product'],
+      relations: ['items', 'items.product', 'seller'],
     });
 
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
-    // Create commission for each item with affiliate commission
-    for (const item of order.items) {
-      if (!item.product) continue;
+    const ambassadorAffiliateId = order.seller?.referredByAffiliateId || null;
+    const isSameAffiliate =
+      affiliateId && ambassadorAffiliateId && affiliateId === ambassadorAffiliateId;
 
-      const commissionPercent = item.product.affiliateCommission || 0;
-      if (commissionPercent <= 0) continue; // Skip if no commission
-
-      const itemTotal = parseFloat(item.price.toString()) * item.quantity;
-      const commissionAmount = (itemTotal * commissionPercent) / 100;
-
-      const commission = this.affiliateCommissionRepository.create({
-        affiliateId,
-        orderId: order.id,
-        productId: item.productId,
-        orderItemAmount: itemTotal,
-        commissionPercent,
-        commissionAmount,
-        quantity: item.quantity,
-        status: CommissionStatus.PENDING,
+    // Buyer referral commissions (skip if same as ambassador to avoid double-credit)
+    if (affiliateId && !isSameAffiliate) {
+      const referral = await this.affiliateReferralRepository.findOne({
+        where: { affiliateId },
       });
 
-      await this.affiliateCommissionRepository.save(commission);
+      for (const item of order.items) {
+        if (!item.product) continue;
+
+        const commissionPercent =
+          referral?.buyerCommissionPercent != null
+            ? parseFloat(referral.buyerCommissionPercent.toString())
+            : (item.product.affiliateCommission || 0);
+        if (commissionPercent <= 0) continue;
+
+        const itemTotal = parseFloat(item.price.toString()) * item.quantity;
+        const commissionAmount = (itemTotal * commissionPercent) / 100;
+
+        const commission = this.affiliateCommissionRepository.create({
+          affiliateId,
+          orderId: order.id,
+          productId: item.productId,
+          orderItemAmount: itemTotal,
+          commissionPercent,
+          commissionAmount,
+          quantity: item.quantity,
+          status: CommissionStatus.PENDING,
+        });
+
+        await this.affiliateCommissionRepository.save(commission);
+      }
+
+      if (order.referralCode) {
+        const refReferral = await this.affiliateReferralRepository.findOne({
+          where: { referralCode: order.referralCode },
+        });
+        if (refReferral) {
+          refReferral.totalOrders += 1;
+          await this.affiliateReferralRepository.save(refReferral);
+        }
+      }
     }
 
-    // Update referral stats
-    if (order.referralCode) {
-      const referral = await this.affiliateReferralRepository.findOne({
-        where: { referralCode: order.referralCode },
-      });
+    // Ambassador referral commission (Option B: % of platform fee)
+    if (ambassadorAffiliateId && order.sellerId) {
+      const ambassadorReferral =
+        await this.affiliateReferralRepository.findOne({
+          where: { affiliateId: ambassadorAffiliateId },
+        });
 
-      if (referral) {
-        referral.totalOrders += 1;
-        await this.affiliateReferralRepository.save(referral);
+      if (
+        ambassadorReferral?.isAmbassador &&
+        ambassadorReferral.sellerReferralCommissionPercent != null
+      ) {
+        const sellerReferralCommissionPercent = parseFloat(
+          ambassadorReferral.sellerReferralCommissionPercent.toString(),
+        );
+        if (sellerReferralCommissionPercent > 0) {
+          const platformFeePercent =
+            await this.sellerSettingsService.getPlatformFeePercent(
+              order.sellerId,
+            );
+          const orderTotalBase =
+            order.totalAmountBase != null
+              ? parseFloat(order.totalAmountBase.toString())
+              : order.items.reduce(
+                  (sum, it) =>
+                    sum +
+                    parseFloat(it.basePrice?.toString() || '0') * it.quantity,
+                  0,
+                );
+          const platformFee =
+            (orderTotalBase * platformFeePercent) / 100;
+          const commissionAmount =
+            (platformFee * sellerReferralCommissionPercent) / 100;
+
+          const firstItem = order.items.find((i) => i.productId);
+          const productIdForFk = firstItem?.productId;
+          if (productIdForFk && commissionAmount > 0) {
+            const commission = this.affiliateCommissionRepository.create({
+              affiliateId: ambassadorAffiliateId,
+              orderId: order.id,
+              productId: productIdForFk,
+              orderItemAmount: platformFee,
+              commissionPercent: sellerReferralCommissionPercent,
+              commissionAmount,
+              quantity: 1,
+              status: CommissionStatus.PENDING,
+            });
+
+            await this.affiliateCommissionRepository.save(commission);
+
+            ambassadorReferral.totalOrders += 1;
+            await this.affiliateReferralRepository.save(ambassadorReferral);
+          }
+        }
       }
     }
   }
@@ -282,8 +362,19 @@ export class AffiliateService {
     }
   }
 
-  // Get minimum withdrawal threshold (from platform settings)
-  async getMinimumWithdrawalThreshold(): Promise<number> {
+  // Get minimum withdrawal threshold (ambassadors can have per-ambassador override)
+  async getMinimumWithdrawalThreshold(affiliateId?: string): Promise<number> {
+    if (affiliateId) {
+      const referral = await this.affiliateReferralRepository.findOne({
+        where: { affiliateId, isActive: true },
+      });
+      if (
+        referral?.isAmbassador &&
+        referral.minWithdrawalThreshold != null
+      ) {
+        return parseFloat(referral.minWithdrawalThreshold.toString());
+      }
+    }
     return await this.platformSettingsService.getMinimumWithdrawalThreshold();
   }
 
@@ -381,14 +472,15 @@ export class AffiliateService {
       0,
     );
 
-    const minimumWithdrawal = await this.getMinimumWithdrawalThreshold();
+    const minimumWithdrawal =
+      await this.getMinimumWithdrawalThreshold(affiliateId);
 
     // canWithdraw: must meet minimum threshold AND not have an active withdrawal this month
     // REJECTED withdrawals don't block - affiliate can request again in the same month
     const canWithdraw =
       availableBalance >= minimumWithdrawal && !hasWithdrawalThisMonth;
 
-    return {
+    const baseStats = {
       referralCode: referral.referralCode,
       referralLink: this.getReferralLink(referral.referralCode),
       totalClicks: referral.totalClicks,
@@ -408,6 +500,66 @@ export class AffiliateService {
       approvedCount: approvedCommissions.length,
       paidCount: paidCommissions.length,
     };
+
+    // Ambassador analytics: referred sellers, their orders, earnings from those sales
+    if (referral.isAmbassador) {
+      const [referredSellersCount, referredSellersOrdersResult, referredSellersEarningsResult] =
+        await Promise.all([
+          this.usersRepository.count({
+            where: { referredByAffiliateId: affiliateId },
+          }),
+          this.ordersRepository
+            .createQueryBuilder('order')
+            .innerJoin('order.seller', 'seller')
+            .where('seller.referredByAffiliateId = :affiliateId', {
+              affiliateId,
+            })
+            .select('COUNT(order.id)', 'count')
+            .addSelect(
+              'COALESCE(SUM(COALESCE(order.totalAmountBase, order.totalAmount)), 0)',
+              'totalGmv',
+            )
+            .getRawOne(),
+          this.affiliateCommissionRepository
+            .createQueryBuilder('commission')
+            .innerJoin('commission.order', 'order')
+            .innerJoin('order.seller', 'seller')
+            .where('commission.affiliateId = :affiliateId', { affiliateId })
+            .andWhere('seller.referredByAffiliateId = :affiliateId', {
+              affiliateId,
+            })
+            .andWhere('commission.status IN (:...statuses)', {
+              statuses: [CommissionStatus.APPROVED, CommissionStatus.PAID],
+            })
+            .select('SUM(commission.commissionAmount)', 'total')
+            .getRawOne(),
+        ]);
+
+      const referredSellersOrdersCount = parseInt(
+        referredSellersOrdersResult?.count || '0',
+        10,
+      );
+      const referredSellersEarnings = parseFloat(
+        referredSellersEarningsResult?.total || '0',
+      );
+      const referredSellersGmv = parseFloat(
+        referredSellersOrdersResult?.totalGmv || '0',
+      );
+
+      return {
+        ...baseStats,
+        isAmbassador: true,
+        ambassadorAnalytics: {
+          referredSellersCount,
+          referredSellersOrdersCount,
+          referredSellersGmv: Math.round(referredSellersGmv * 100) / 100,
+          referredSellersEarnings:
+            Math.round(referredSellersEarnings * 100) / 100,
+        },
+      };
+    }
+
+    return { ...baseStats, isAmbassador: false };
   }
 
   // Get referral link
@@ -559,7 +711,8 @@ export class AffiliateService {
     }
 
     // Check minimum withdrawal threshold
-    const minimumWithdrawal = await this.getMinimumWithdrawalThreshold();
+    const minimumWithdrawal =
+      await this.getMinimumWithdrawalThreshold(affiliateId);
     if (amount < minimumWithdrawal) {
       throw new BadRequestException(
         `Minimum withdrawal amount is ${minimumWithdrawal} den. You requested ${amount} den.`,
