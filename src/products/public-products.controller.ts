@@ -222,7 +222,18 @@ export class PublicProductsController {
     },
   })
   @ApiResponse({ status: 404, description: 'Product not found' })
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOnePublic(id);
+  @ApiQuery({
+    name: 'incrementView',
+    required: false,
+    type: Boolean,
+    description:
+      'Whether to increment the product view count (default: true). Set to false for metadata/SEO fetches to avoid duplicate view counts.',
+  })
+  findOne(
+    @Param('id') id: string,
+    @Query('incrementView') incrementView?: string,
+  ) {
+    const shouldIncrement = incrementView !== 'false';
+    return this.productsService.findOnePublic(id, shouldIncrement);
   }
 }

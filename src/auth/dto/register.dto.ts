@@ -64,5 +64,13 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   verificationToken?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Ambassador referral code when signing up as seller (from ?ref=CODE link)',
+  })
+  @IsString()
+  @IsOptional()
+  referralCode?: string;
 }
 

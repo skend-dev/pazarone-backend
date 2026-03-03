@@ -121,6 +121,7 @@ export class AuthController {
       dto.device,
       dto.userType,
       dto.market,
+      dto.referralCode,
     );
   }
 
@@ -237,7 +238,12 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Market required for seller' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async upgradeRole(@CurrentUser() user: User, @Body() dto: UpgradeRoleDto) {
-    return this.authService.upgradeRole(user, dto.userType, dto.market);
+    return this.authService.upgradeRole(
+      user,
+      dto.userType,
+      dto.market,
+      dto.referralCode,
+    );
   }
 
   @Post('send-verification-email')

@@ -39,6 +39,21 @@ export class AffiliateReferral {
   @Column('decimal', { precision: 10, scale: 2, default: 0 })
   totalEarnings: number; // Total commission earned
 
+  @Column({ default: false })
+  isAmbassador: boolean;
+
+  /** Override for buyer referrals (product purchases). If null, use product.affiliateCommission */
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  buyerCommissionPercent: number | null;
+
+  /** Commission % of platform fee for orders from sellers referred by this ambassador (Option B) */
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  sellerReferralCommissionPercent: number | null;
+
+  /** Min withdrawal threshold for this ambassador. If set, overrides platform default */
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  minWithdrawalThreshold: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

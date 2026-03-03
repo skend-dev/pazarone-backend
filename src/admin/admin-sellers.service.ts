@@ -401,116 +401,165 @@ export class AdminSellersService {
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
-    const queryBuilder = this.usersRepository
+    // Build base query for matching sellers (used for totals, pagination, and count)
+    const baseQueryBuilder = this.usersRepository
       .createQueryBuilder('user')
       .where('user.userType = :userType', { userType: UserType.SELLER })
-      .orderBy('user.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
+      .orderBy('user.createdAt', 'DESC');
 
     if (query.search) {
-      queryBuilder.andWhere(
+      baseQueryBuilder.andWhere(
         '(user.name ILIKE :search OR user.email ILIKE :search)',
         { search: `%${query.search}%` },
       );
     }
 
-    const [users, total] = await queryBuilder.getManyAndCount();
+    // Get total count for correct pagination (without loading all entities)
+    const total = await baseQueryBuilder.clone().getCount();
 
-    // Get payment summaries for each seller
-    const summaries = await Promise.all(
-      users.map(async (user) => {
-        const settings = await this.sellerSettingsRepository.findOne({
-          where: { sellerId: user.id },
+    // Fetch ALL matching sellers for accurate platform-wide totals (capped at 5000 for performance)
+    const allUsersForTotals = await baseQueryBuilder
+      .clone()
+      .take(5000)
+      .getMany();
+
+    // Fetch only the current page of sellers for the table (efficient pagination)
+    const paginatedUsers = await baseQueryBuilder
+      .clone()
+      .skip(skip)
+      .take(limit)
+      .getMany();
+
+    // Helper to compute summary for a single seller
+    const computeSellerSummary = async (user: User) => {
+      const settings = await this.sellerSettingsRepository.findOne({
+        where: { sellerId: user.id },
+      });
+
+      const orderQueryBuilder = this.ordersRepository
+        .createQueryBuilder('order')
+        .where('order.sellerId = :sellerId', { sellerId: user.id })
+        .andWhere('order.status = :status', {
+          status: OrderStatus.DELIVERED,
         });
 
-        // Build order query - only delivered orders
-        const orderQueryBuilder = this.ordersRepository
-          .createQueryBuilder('order')
-          .where('order.sellerId = :sellerId', { sellerId: user.id })
-          .andWhere('order.status = :status', {
-            status: OrderStatus.DELIVERED,
-          });
+      if (query.paymentMethod) {
+        orderQueryBuilder.andWhere('order.paymentMethod = :paymentMethod', {
+          paymentMethod: query.paymentMethod,
+        });
+      }
 
-        if (query.paymentMethod) {
-          orderQueryBuilder.andWhere('order.paymentMethod = :paymentMethod', {
-            paymentMethod: query.paymentMethod,
-          });
-        }
+      const orders = await orderQueryBuilder.getMany();
 
-        const orders = await orderQueryBuilder.getMany();
+      let codOutstandingMKD = 0;
+      let codOutstandingEUR = 0;
+      let codOrderCount = 0;
+      let cardOutstandingMKD = 0;
+      let cardOutstandingEUR = 0;
+      let cardOrderCount = 0;
 
-        // Calculate outstanding amounts
-        let codOutstandingMKD = 0;
-        let codOutstandingEUR = 0;
-        let codOrderCount = 0;
-        let cardOutstandingMKD = 0;
-        let cardOutstandingEUR = 0;
-        let cardOrderCount = 0;
-
-        for (const order of orders) {
-          // Only include orders that haven't been paid
-          if (order.paymentMethod === 'cod' && !order.sellerPaid) {
-            codOrderCount++;
-            const fees = await this.calculateOrderFees(order, user.id);
-            const sellerAmount = fees.platformFee + fees.affiliateCommission;
-            codOutstandingMKD +=
-              fees.platformFeeMKD + fees.affiliateCommissionMKD;
-            codOutstandingEUR +=
-              fees.platformFeeEUR + fees.affiliateCommissionEUR;
-          } else if (order.paymentMethod === 'card' && !order.adminPaid) {
-            cardOrderCount++;
-            const orderTotalBase = order.totalAmountBase
-              ? parseFloat(order.totalAmountBase.toString())
-              : parseFloat(order.totalAmount.toString());
-            const fees = await this.calculateOrderFees(order, user.id);
-            const sellerAmount =
-              orderTotalBase - fees.platformFee - fees.affiliateCommission;
-            const sellerCurrency = order.sellerBaseCurrency || 'MKD';
-            if (sellerCurrency === 'MKD') {
-              cardOutstandingMKD += sellerAmount;
-            } else if (sellerCurrency === 'EUR') {
-              cardOutstandingEUR += sellerAmount;
-            }
+      for (const order of orders) {
+        if (order.paymentMethod === 'cod' && !order.sellerPaid) {
+          codOrderCount++;
+          const fees = await this.calculateOrderFees(order, user.id);
+          codOutstandingMKD +=
+            fees.platformFeeMKD + fees.affiliateCommissionMKD;
+          codOutstandingEUR +=
+            fees.platformFeeEUR + fees.affiliateCommissionEUR;
+        } else if (order.paymentMethod === 'card' && !order.adminPaid) {
+          cardOrderCount++;
+          const orderTotalBase = order.totalAmountBase
+            ? parseFloat(order.totalAmountBase.toString())
+            : parseFloat(order.totalAmount.toString());
+          const fees = await this.calculateOrderFees(order, user.id);
+          const sellerAmount =
+            orderTotalBase - fees.platformFee - fees.affiliateCommission;
+          const sellerCurrency = order.sellerBaseCurrency || 'MKD';
+          if (sellerCurrency === 'MKD') {
+            cardOutstandingMKD += sellerAmount;
+          } else if (sellerCurrency === 'EUR') {
+            cardOutstandingEUR += sellerAmount;
           }
         }
+      }
 
-        // Calculate totals (legacy fields for backward compatibility)
-        const codOutstanding = codOutstandingMKD + codOutstandingEUR;
-        const cardOutstanding = cardOutstandingMKD + cardOutstandingEUR;
-        const totalOutstanding = cardOutstanding - codOutstanding; // Positive = admin owes, negative = seller owes
-        const totalOutstandingMKD = cardOutstandingMKD - codOutstandingMKD;
-        const totalOutstandingEUR = cardOutstandingEUR - codOutstandingEUR;
+      const codOutstanding = codOutstandingMKD + codOutstandingEUR;
+      const cardOutstanding = cardOutstandingMKD + cardOutstandingEUR;
 
-        return {
-          sellerId: user.id,
-          sellerName: user.name,
-          sellerEmail: user.email,
-          storeName: settings?.storeName || null,
-          codOutstanding,
-          codOutstandingMKD,
-          codOutstandingEUR,
-          codOrderCount,
-          cardOutstanding,
-          cardOutstandingMKD,
-          cardOutstandingEUR,
-          cardOrderCount,
-          totalOutstanding,
-          totalOutstandingMKD,
-          totalOutstandingEUR,
-        };
-      }),
+      return {
+        sellerId: user.id,
+        sellerName: user.name,
+        sellerEmail: user.email,
+        storeName: settings?.storeName || null,
+        codOutstanding,
+        codOutstandingMKD,
+        codOutstandingEUR,
+        codOrderCount,
+        cardOutstanding,
+        cardOutstandingMKD,
+        cardOutstandingEUR,
+        cardOrderCount,
+        totalOutstanding: cardOutstanding - codOutstanding,
+        totalOutstandingMKD: cardOutstandingMKD - codOutstandingMKD,
+        totalOutstandingEUR: cardOutstandingEUR - codOutstandingEUR,
+      };
+    };
+
+    // Compute summaries for ALL sellers (capped) - for platform-wide totals only
+    const allSummariesForTotals = await Promise.all(
+      allUsersForTotals.map((user) => computeSellerSummary(user)),
     );
 
-    // Return all sellers with their payment summaries
-    // If paymentMethod filter is applied, orders are already filtered, so amounts will be zero for sellers without matching orders
+    // Platform-wide totals from all sellers (up to 5000)
+    const totals = allSummariesForTotals.reduce(
+      (acc, s) => ({
+        totalCodOutstandingMKD:
+          acc.totalCodOutstandingMKD + (s.codOutstandingMKD || 0),
+        totalCodOutstandingEUR:
+          acc.totalCodOutstandingEUR + (s.codOutstandingEUR || 0),
+        totalCardOutstandingMKD:
+          acc.totalCardOutstandingMKD + (s.cardOutstandingMKD || 0),
+        totalCardOutstandingEUR:
+          acc.totalCardOutstandingEUR + (s.cardOutstandingEUR || 0),
+        totalSellersWithOutstanding:
+          acc.totalSellersWithOutstanding +
+          (s.codOutstanding > 0 || s.cardOutstanding > 0 ? 1 : 0),
+        codSellersCount: acc.codSellersCount + (s.codOutstanding > 0 ? 1 : 0),
+        cardSellersCount:
+          acc.cardSellersCount + (s.cardOutstanding > 0 ? 1 : 0),
+      }),
+      {
+        totalCodOutstandingMKD: 0,
+        totalCodOutstandingEUR: 0,
+        totalCardOutstandingMKD: 0,
+        totalCardOutstandingEUR: 0,
+        totalSellersWithOutstanding: 0,
+        codSellersCount: 0,
+        cardSellersCount: 0,
+      },
+    );
+
+    // Compute summaries for the current page only (for table display)
+    const summaries = await Promise.all(
+      paginatedUsers.map((user) => computeSellerSummary(user)),
+    );
+
     return {
       summaries,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+      totals: {
+        totalCodOutstandingMKD: totals.totalCodOutstandingMKD,
+        totalCodOutstandingEUR: totals.totalCodOutstandingEUR,
+        totalCardOutstandingMKD: totals.totalCardOutstandingMKD,
+        totalCardOutstandingEUR: totals.totalCardOutstandingEUR,
+        totalSellersWithOutstanding: totals.totalSellersWithOutstanding,
+        codSellersCount: totals.codSellersCount,
+        cardSellersCount: totals.cardSellersCount,
       },
     };
   }

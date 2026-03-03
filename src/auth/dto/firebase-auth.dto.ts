@@ -66,4 +66,11 @@ export class FirebaseAuthDto {
   @IsString()
   @IsIn(['MK', 'KS'])
   market?: 'MK' | 'KS';
+
+  @ApiPropertyOptional({
+    description: 'Ambassador referral code when signing up as seller (from ?ref=CODE link)',
+  })
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }
