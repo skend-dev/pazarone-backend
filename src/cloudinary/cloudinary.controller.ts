@@ -37,10 +37,10 @@ export class CloudinaryController {
     FilesInterceptor('images', 8, {
       storage: memoryStorage(),
       fileFilter: (req, file, cb) => {
-        if (!file.mimetype.match(/^image\/(jpeg|jpg|png|gif|webp)$/)) {
+        if (!file.mimetype.match(/^image\/(jpeg|jpg|png|gif|webp|avif)$/)) {
           return cb(
             new BadRequestException(
-              'Only image files (jpeg, jpg, png, gif, webp) are allowed!',
+              'Only image files (jpeg, jpg, png, gif, webp, avif) are allowed!',
             ),
             false,
           );
