@@ -108,6 +108,28 @@ export class ProductsService {
    * Updates the price field to reflect the current effective price
    */
   private normalizeProductPrice(product: Product): Product {
+    // When product has active sale but regularPrice is null, use the stored price or basePrice
+    // as the comparison base for discount calculation (legacy products may not have regularPrice set)
+    if (
+      this.isSalePriceValid(product.salePrice, product.salePriceExpiresAt) &&
+      (product.regularPrice == null || product.regularPrice === undefined)
+    ) {
+      const priceNum =
+        product.price != null ? Number(product.price) : null;
+      const basePriceNum =
+        product.basePrice != null ? Number(product.basePrice) : null;
+      const salePriceNum =
+        product.salePrice != null ? Number(product.salePrice) : null;
+
+      if (salePriceNum != null) {
+        if (priceNum != null && priceNum > salePriceNum) {
+          product.regularPrice = priceNum;
+        } else if (basePriceNum != null && basePriceNum > salePriceNum) {
+          product.regularPrice = basePriceNum;
+        }
+      }
+    }
+
     const effectivePrice = this.getEffectivePrice(
       product.salePrice,
       product.regularPrice,
