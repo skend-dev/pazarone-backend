@@ -409,9 +409,12 @@ export class InvoiceService {
             }
 
             totalItemAmount += itemTotal;
-            if (item.product) {
-              totalCommission +=
-                (itemTotal * item.product.affiliateCommission) / 100;
+            const commissionPercent =
+              item.affiliateCommissionPercent ??
+              item.product?.affiliateCommission ??
+              0;
+            if (commissionPercent > 0) {
+              totalCommission += (itemTotal * commissionPercent) / 100;
             }
           }
           if (totalItemAmount > 0) {
@@ -458,10 +461,13 @@ export class InvoiceService {
             }
 
             totalItemAmount += itemTotal;
-            if (item.product && item.product.affiliateCommission > 0) {
-              // Calculate affiliate fee based on product's affiliate commission percentage
-              totalCommission +=
-                (itemTotal * item.product.affiliateCommission) / 100;
+            const commissionPercent =
+              item.affiliateCommissionPercent ??
+              item.product?.affiliateCommission ??
+              0;
+            if (commissionPercent > 0) {
+              // Use snapshotted commission from order time; fallback to product for legacy orders
+              totalCommission += (itemTotal * commissionPercent) / 100;
             }
           }
           if (totalItemAmount > 0 && totalCommission > 0) {
