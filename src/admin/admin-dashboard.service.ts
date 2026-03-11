@@ -193,11 +193,9 @@ export class AdminDashboardService {
       const exchangeRate = order.exchangeRate != null ? parseFloat(order.exchangeRate.toString()) : 61.5;
 
       for (const item of order.items || []) {
-        // Use order-time snapshot; fallback to product for legacy orders without snapshot
-        const commissionPercent =
-          item.affiliateCommissionPercent ??
-          item.product?.affiliateCommission ??
-          0;
+        // Use order-time snapshot only. Legacy orders (null) use 0 - we don't apply
+        // current product commission to old orders; that would incorrectly inflate fees.
+        const commissionPercent = item.affiliateCommissionPercent ?? 0;
         if (commissionPercent <= 0) continue;
 
         let itemTotalBase: number;
