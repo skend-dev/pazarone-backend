@@ -29,6 +29,11 @@ export class PlatformSettingsService {
         affiliateCommissionMin: 0,
         affiliateCommissionMax: 100,
         platformFeePercent: 7.0,
+        automaticPromotionEmailsEnabled: false,
+        promotionEmailSchedule: 'daily',
+        promotionEmailScheduleDayOfWeek: 1,
+        promotionEmailsFlashDealsEnabled: true,
+        promotionEmailsNewArrivalsEnabled: true,
       });
       settings = await this.platformSettingsRepository.save(settings);
     }
@@ -59,6 +64,28 @@ export class PlatformSettingsService {
     return parseFloat(settings.affiliateCommissionMax.toString());
   }
 
+  async getAutomaticPromotionEmailsEnabled(): Promise<boolean> {
+    const settings = await this.getSettings();
+    return settings.automaticPromotionEmailsEnabled === true;
+  }
+
+  async getPromotionEmailSchedule(): Promise<{ schedule: 'daily' | 'weekly'; dayOfWeek: number }> {
+    const settings = await this.getSettings();
+    const schedule = settings.promotionEmailSchedule === 'weekly' ? 'weekly' : 'daily';
+    const dayOfWeek = settings.promotionEmailScheduleDayOfWeek ?? 1;
+    return { schedule, dayOfWeek };
+  }
+
+  async getPromotionEmailsFlashDealsEnabled(): Promise<boolean> {
+    const settings = await this.getSettings();
+    return settings.promotionEmailsFlashDealsEnabled !== false;
+  }
+
+  async getPromotionEmailsNewArrivalsEnabled(): Promise<boolean> {
+    const settings = await this.getSettings();
+    return settings.promotionEmailsNewArrivalsEnabled !== false;
+  }
+
   // Update platform settings
   async updateSettings(updates: Partial<PlatformSettings>): Promise<PlatformSettings> {
     const settings = await this.getSettings();
@@ -77,6 +104,26 @@ export class PlatformSettingsService {
 
     if (updates.platformFeePercent !== undefined) {
       settings.platformFeePercent = updates.platformFeePercent;
+    }
+
+    if (updates.automaticPromotionEmailsEnabled !== undefined) {
+      settings.automaticPromotionEmailsEnabled = updates.automaticPromotionEmailsEnabled;
+    }
+
+    if (updates.promotionEmailSchedule !== undefined) {
+      settings.promotionEmailSchedule = updates.promotionEmailSchedule;
+    }
+
+    if (updates.promotionEmailScheduleDayOfWeek !== undefined) {
+      settings.promotionEmailScheduleDayOfWeek = updates.promotionEmailScheduleDayOfWeek;
+    }
+
+    if (updates.promotionEmailsFlashDealsEnabled !== undefined) {
+      settings.promotionEmailsFlashDealsEnabled = updates.promotionEmailsFlashDealsEnabled;
+    }
+
+    if (updates.promotionEmailsNewArrivalsEnabled !== undefined) {
+      settings.promotionEmailsNewArrivalsEnabled = updates.promotionEmailsNewArrivalsEnabled;
     }
 
     if (updates.bankTransferDetails !== undefined) {

@@ -38,6 +38,7 @@ import { Notification } from './notifications/entities/notification.entity';
 import { EmailVerification } from './auth/entities/email-verification.entity';
 import { PasswordReset } from './auth/entities/password-reset.entity';
 import { CustomerModule } from './customer/customer.module';
+import { PromotionModule } from './promotion/promotion.module';
 import { CustomerAddress } from './customer/entities/customer-address.entity';
 import { CustomerNotificationPreferences } from './customer/entities/customer-notification-preferences.entity';
 import { ProductVariantAttribute } from './products/entities/product-variant-attribute.entity';
@@ -132,6 +133,7 @@ import { UserIdentity } from './users/entities/user-identity.entity';
     NotificationsModule,
     CustomerModule,
     InvoiceModule,
+    PromotionModule,
   ],
   controllers: [AppController],
   providers: [

@@ -14,13 +14,21 @@ import { PasswordReset } from './entities/password-reset.entity';
 import { EmailService } from './services/email.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { PasswordResetService } from './services/password-reset.service';
+import { UnsubscribeService } from './services/unsubscribe.service';
+import { CustomerNotificationPreferences } from '../customer/entities/customer-notification-preferences.entity';
+import { SellerSettings } from '../seller/entities/seller-settings.entity';
 
 @Module({
   imports: [
     UsersModule,
     forwardRef(() => AffiliateModule),
     PassportModule,
-    TypeOrmModule.forFeature([EmailVerification, PasswordReset]),
+    TypeOrmModule.forFeature([
+      EmailVerification,
+      PasswordReset,
+      CustomerNotificationPreferences,
+      SellerSettings,
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -45,6 +53,7 @@ import { PasswordResetService } from './services/password-reset.service';
     EmailService,
     EmailVerificationService,
     PasswordResetService,
+    UnsubscribeService,
   ],
   exports: [
     AuthService,
