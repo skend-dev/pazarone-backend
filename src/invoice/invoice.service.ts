@@ -409,10 +409,8 @@ export class InvoiceService {
             }
 
             totalItemAmount += itemTotal;
-            const commissionPercent =
-              item.affiliateCommissionPercent ??
-              item.product?.affiliateCommission ??
-              0;
+            // Order-time snapshot only. Legacy orders (null) use 0 - don't apply current product rate.
+            const commissionPercent = item.affiliateCommissionPercent ?? 0;
             if (commissionPercent > 0) {
               totalCommission += (itemTotal * commissionPercent) / 100;
             }
@@ -461,12 +459,9 @@ export class InvoiceService {
             }
 
             totalItemAmount += itemTotal;
-            const commissionPercent =
-              item.affiliateCommissionPercent ??
-              item.product?.affiliateCommission ??
-              0;
+            // Order-time snapshot only. Legacy orders (null) use 0 - don't apply current product rate.
+            const commissionPercent = item.affiliateCommissionPercent ?? 0;
             if (commissionPercent > 0) {
-              // Use snapshotted commission from order time; fallback to product for legacy orders
               totalCommission += (itemTotal * commissionPercent) / 100;
             }
           }

@@ -344,11 +344,8 @@ export class SellerAnalyticsService {
         const itemTotalBase =
           parseFloat(item.basePrice?.toString() || item.price.toString()) *
           item.quantity;
-        // Use order-time snapshot; fallback to product for legacy orders
-        const affiliateCommissionPercent =
-          item.affiliateCommissionPercent ??
-          item.product?.affiliateCommission ??
-          0;
+        // Order-time snapshot only. Legacy orders (null) use 0 - don't apply current product rate.
+        const affiliateCommissionPercent = item.affiliateCommissionPercent ?? 0;
         const itemAffiliateCommission =
           (itemTotalBase * affiliateCommissionPercent) / 100;
 

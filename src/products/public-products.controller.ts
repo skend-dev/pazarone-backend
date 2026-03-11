@@ -157,6 +157,7 @@ export class PublicProductsController {
         hotDeals: { type: 'array', items: { type: 'object' } },
         bestSellers: { type: 'array', items: { type: 'object' } },
         newArrivals: { type: 'array', items: { type: 'object' } },
+        maxDiscountPercent: { type: 'number', description: 'Biggest discount % across flashDeals + hotDeals' },
       },
     },
   })
