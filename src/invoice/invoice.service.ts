@@ -85,7 +85,7 @@ export class InvoiceService {
       return '';
     }
     return `
-      <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+      <div style="text-align: center; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid #e8ecef;">
         <a href="${this.frontendUrl}" style="display: inline-block; text-decoration: none;">
           <img src="${this.logoUrl}" alt="PazarOne" style="max-width: 180px; height: auto; display: block; margin: 0 auto; border: 0;" />
         </a>
@@ -98,11 +98,11 @@ export class InvoiceService {
    */
   private getEmailFooter(): string {
     return `
-      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 13px; line-height: 1.8;">
-        <p style="margin: 0 0 8px 0;"><strong>PazarOne</strong></p>
-        <p style="margin: 0 0 8px 0;">Official platform: <a href="${this.frontendUrl}" style="color: #3498db; text-decoration: none;">${this.frontendUrl}</a></p>
-        <p style="margin: 0 0 8px 0;">Support: <a href="mailto:${this.replyToEmail}" style="color: #3498db; text-decoration: none;">${this.replyToEmail}</a></p>
-        <p style="margin: 8px 0 0 0; color: #999; font-size: 12px;">You received this email because you are a seller on PazarOne.</p>
+      <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e8ecef; color: #6b7280; font-size: 13px; line-height: 1.7;">
+        <p style="margin: 0 0 6px 0; font-weight: 600; color: #1a1d21;">PazarOne</p>
+        <p style="margin: 0 0 6px 0;">Official platform: <a href="${this.frontendUrl}" style="color: #3b82f6; text-decoration: none;">${this.frontendUrl}</a></p>
+        <p style="margin: 0 0 6px 0;">Support: <a href="mailto:${this.replyToEmail}" style="color: #3b82f6; text-decoration: none;">${this.replyToEmail}</a></p>
+        <p style="margin: 12px 0 0 0; color: #9ca3af; font-size: 12px;">You received this email because you are a seller on PazarOne.</p>
       </div>
     `;
   }
@@ -606,21 +606,21 @@ export class InvoiceService {
       let itemsTableHtml = '';
       if (invoice.items && invoice.items.length > 0) {
         itemsTableHtml = `
-          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+          <table style="width: 100%; border-collapse: collapse;">
             <thead>
-              <tr style="background-color: #f5f5f5;">
-                <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Order #</th>
-                <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Delivery Date</th>
-                <th style="padding: 12px; text-align: right; border: 1px solid #ddd;">Product Price</th>
-                <th style="padding: 12px; text-align: right; border: 1px solid #ddd;">Platform Fee</th>
-                <th style="padding: 12px; text-align: right; border: 1px solid #ddd;">Affiliate Fee</th>
-                <th style="padding: 12px; text-align: right; border: 1px solid #ddd;">Total Owed</th>
+              <tr style="background-color: #1a1d21;">
+                <th style="padding: 12px 14px; text-align: left; color: #ffffff; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Order #</th>
+                <th style="padding: 12px 14px; text-align: left; color: #ffffff; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Delivery</th>
+                <th style="padding: 12px 14px; text-align: right; color: #ffffff; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Product</th>
+                <th style="padding: 12px 14px; text-align: right; color: #ffffff; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Platform</th>
+                <th style="padding: 12px 14px; text-align: right; color: #ffffff; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Affiliate</th>
+                <th style="padding: 12px 14px; text-align: right; color: #ffffff; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Total Owed</th>
               </tr>
             </thead>
             <tbody>
         `;
 
-        for (const item of invoice.items) {
+        invoice.items!.forEach((item, idx) => {
           const deliveryDate = new Date(item.deliveryDate).toLocaleDateString(
             'en-US',
             {
@@ -703,17 +703,18 @@ export class InvoiceService {
               ? ` (${parseFloat(item.affiliateFeePercent.toString()).toFixed(2)}%)`
               : '';
 
+          const rowBg = idx % 2 === 0 ? '#ffffff' : '#fafafa';
           itemsTableHtml += `
-            <tr>
-              <td style="padding: 10px; border: 1px solid #ddd;">${item.orderNumber}</td>
-              <td style="padding: 10px; border: 1px solid #ddd;">${deliveryDate}</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${productPrice}</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${platformFee} (${platformFeePercent}%)</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${affiliateFee}${affiliateFeePercentText}</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${totalOwed}</td>
+            <tr style="background-color: ${rowBg};">
+              <td style="padding: 12px 14px; border-bottom: 1px solid #e8ecef; color: #1a1d21; font-size: 14px;">${item.orderNumber}</td>
+              <td style="padding: 12px 14px; border-bottom: 1px solid #e8ecef; color: #4a5568; font-size: 14px;">${deliveryDate}</td>
+              <td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e8ecef; color: #1a1d21; font-size: 14px;">${productPrice}</td>
+              <td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e8ecef; color: #1a1d21; font-size: 14px;">${platformFee} (${platformFeePercent}%)</td>
+              <td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e8ecef; color: #1a1d21; font-size: 14px;">${affiliateFee}${affiliateFeePercentText}</td>
+              <td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e8ecef; color: #059669; font-weight: 600; font-size: 14px;">${totalOwed}</td>
             </tr>
           `;
-        }
+        });
 
         itemsTableHtml += `
             </tbody>
@@ -750,38 +751,40 @@ export class InvoiceService {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Weekly Invoice - ${invoice.invoiceNumber}</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1a1d21; max-width: 800px; margin: 0 auto; padding: 24px; background-color: #f4f6f8;">
+          <div style="background-color: #ffffff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
             ${this.getLogoHtml()}
-            <h1 style="color: #2c3e50; margin-top: 0;">Weekly Invoice</h1>
-            <p style="margin: 5px 0;"><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</p>
-            <p style="margin: 5px 0;"><strong>Week Period:</strong> ${weekStartDate} - ${weekEndDate}</p>
-            <p style="margin: 5px 0;"><strong>Due Date:</strong> ${dueDate}</p>
-            <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #e67e22; font-weight: bold;">${invoice.status.toUpperCase()}</span></p>
-          </div>
+            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #1a1d21 100%); padding: 24px; border-radius: 10px; margin-bottom: 24px;">
+              <h1 style="color: #ffffff; margin: 0 0 16px 0; font-size: 24px; font-weight: 700;">Weekly Invoice</h1>
+              <p style="margin: 6px 0; color: rgba(255,255,255,0.9); font-size: 14px;"><strong>Invoice:</strong> ${invoice.invoiceNumber}</p>
+              <p style="margin: 6px 0; color: rgba(255,255,255,0.9); font-size: 14px;"><strong>Period:</strong> ${weekStartDate} – ${weekEndDate}</p>
+              <p style="margin: 6px 0; color: rgba(255,255,255,0.9); font-size: 14px;"><strong>Due:</strong> ${dueDate}</p>
+              <p style="margin: 6px 0; color: rgba(255,255,255,0.9); font-size: 14px;"><strong>Status:</strong> <span style="color: #fbbf24; font-weight: 600;">${invoice.status.toUpperCase()}</span></p>
+            </div>
 
-          <div style="background-color: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: #2c3e50; margin-top: 0;">Invoice Summary</h2>
-            <p><strong>Total Orders:</strong> ${invoice.orderCount}</p>
-            <p><strong>Total Amount Owed:</strong> <span style="font-size: 1.2em; font-weight: bold; color: #e74c3c;">${totalAmountText}</span></p>
-          </div>
+            <div style="background-color: #f8fafc; padding: 24px; border-radius: 10px; border: 1px solid #e8ecef; margin-bottom: 24px;">
+              <h2 style="color: #1a1d21; margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">Summary</h2>
+              <p style="margin: 8px 0;"><strong>Total Orders:</strong> ${invoice.orderCount}</p>
+              <p style="margin: 8px 0;"><strong>Amount Owed:</strong> <span style="font-size: 20px; font-weight: 700; color: #059669;">${totalAmountText}</span></p>
+            </div>
 
-          <div style="background-color: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: #2c3e50; margin-top: 0;">Order Details</h2>
-            ${itemsTableHtml}
-          </div>
+            <div style="background-color: #ffffff; padding: 24px; border: 1px solid #e8ecef; border-radius: 10px; margin-bottom: 24px; overflow-x: auto;">
+              <h2 style="color: #1a1d21; margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Order Details</h2>
+              ${itemsTableHtml}
+            </div>
 
-          <div style="background-color: #fff3cd; padding: 20px; border-left: 4px solid #ffc107; border-radius: 4px; margin-bottom: 20px;">
-            <h3 style="margin-top: 0; color: #856404;">Payment Deadline</h3>
-            <p style="margin: 0;">Please ensure payment is received by <strong>${dueDate}</strong>. Late payments may result in account restrictions.</p>
-          </div>
+            <div style="background-color: #fef3c7; padding: 20px; border-left: 4px solid #f59e0b; border-radius: 8px; margin-bottom: 24px;">
+              <h3 style="margin: 0 0 8px 0; color: #92400e; font-size: 16px; font-weight: 600;">Payment Deadline</h3>
+              <p style="margin: 0; color: #78350f; font-size: 14px;">Please ensure payment is received by <strong>${dueDate}</strong>. Late payments may result in account restrictions.</p>
+            </div>
 
-          <div style="background-color: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px;">
-            <p style="margin: 0;">To view your invoice and make payment, please log in to your seller dashboard.</p>
-            <p style="margin: 10px 0 0 0;"><a href="${frontendUrl}/en/seller/invoices" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Invoice</a></p>
-          </div>
+            <div style="text-align: center; padding: 24px; background-color: #f8fafc; border-radius: 10px; margin-bottom: 24px;">
+              <p style="margin: 0 0 16px 0; color: #4a5568;">View and pay your invoice in the seller dashboard.</p>
+              <a href="${frontendUrl}/en/seller/invoices" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px;">View Invoice</a>
+            </div>
 
-          ${this.getEmailFooter()}
+            ${this.getEmailFooter()}
+          </div>
         </body>
         </html>
       `;
