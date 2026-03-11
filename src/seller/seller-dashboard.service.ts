@@ -124,8 +124,11 @@ export class SellerDashboardService {
         const itemTotalBase =
           parseFloat(item.basePrice?.toString() || item.price.toString()) *
           item.quantity;
+        // Use order-time snapshot; fallback to product for legacy orders
         const affiliateCommissionPercent =
-          item.product?.affiliateCommission || 0;
+          item.affiliateCommissionPercent ??
+          item.product?.affiliateCommission ??
+          0;
         const itemAffiliateCommission =
           (itemTotalBase * affiliateCommissionPercent) / 100;
 

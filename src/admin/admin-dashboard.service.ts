@@ -193,7 +193,12 @@ export class AdminDashboardService {
       const exchangeRate = order.exchangeRate != null ? parseFloat(order.exchangeRate.toString()) : 61.5;
 
       for (const item of order.items || []) {
-        if (!item.product?.affiliateCommission) continue;
+        // Use order-time snapshot; fallback to product for legacy orders without snapshot
+        const commissionPercent =
+          item.affiliateCommissionPercent ??
+          item.product?.affiliateCommission ??
+          0;
+        if (commissionPercent <= 0) continue;
 
         let itemTotalBase: number;
         if (item.basePrice != null && item.basePrice !== undefined) {
@@ -209,7 +214,7 @@ export class AdminDashboardService {
           }
         }
 
-        const commission = (itemTotalBase * item.product.affiliateCommission) / 100;
+        const commission = (itemTotalBase * commissionPercent) / 100;
         if (sellerCurrency === 'MKD') marketingFeeMKD += commission;
         else marketingFeeEUR += commission;
       }
