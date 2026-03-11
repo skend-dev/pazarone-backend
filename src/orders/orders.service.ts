@@ -935,6 +935,10 @@ export class OrdersService {
         baseCurrency: productBaseCurrency,
         variantId: variant?.id || null,
         variantCombination: variantCombination,
+        affiliateCommissionPercent:
+          product.affiliateCommission != null
+            ? parseFloat(product.affiliateCommission.toString())
+            : null, // Snapshot at order time - future changes don't affect this order
       });
 
       orderItems.push(orderItem);

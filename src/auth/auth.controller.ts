@@ -28,6 +28,8 @@ import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
 import { CheckEmailVerifiedDto } from './dto/check-email-verified.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UnsubscribeDto } from './dto/unsubscribe.dto';
+import { UnsubscribeService } from './services/unsubscribe.service';
 import { UpgradeRoleDto } from './dto/upgrade-role.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -45,6 +47,7 @@ export class AuthController {
     private readonly usersService: UsersService,
     private readonly emailVerificationService: EmailVerificationService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly unsubscribeService: UnsubscribeService,
   ) {}
 
   @Post('signup')
@@ -450,5 +453,25 @@ export class AuthController {
     return {
       message: 'Password has been reset successfully',
     };
+  }
+
+  @Post('unsubscribe')
+  @Throttle({ short: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Unsubscribe from promotional emails',
+    description:
+      'Opts out the given email from promotional/marketing emails. One-click unsubscribe for CAN-SPAM compliance.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully unsubscribed',
+    schema: {
+      type: 'object',
+      properties: { unsubscribed: { type: 'boolean', example: true } },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid email' })
+  async unsubscribe(@Body() dto: UnsubscribeDto) {
+    return this.unsubscribeService.unsubscribe(dto.email);
   }
 }

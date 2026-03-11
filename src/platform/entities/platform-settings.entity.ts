@@ -28,6 +28,22 @@ export class PlatformSettings {
   @Column('decimal', { precision: 5, scale: 2, default: 7.0 })
   platformFeePercent: number; // Platform fee percentage (default: 7%)
 
+  // Automatic Promotion Emails
+  @Column({ default: false })
+  automaticPromotionEmailsEnabled: boolean; // Master switch (default: false)
+
+  @Column({ type: 'varchar', length: 20, default: 'daily' })
+  promotionEmailSchedule: string; // 'daily' | 'weekly'
+
+  @Column({ type: 'int', default: 1 })
+  promotionEmailScheduleDayOfWeek: number; // 0=Sunday, 1=Monday, ... 6=Saturday (used when weekly)
+
+  @Column({ default: true })
+  promotionEmailsFlashDealsEnabled: boolean; // Send flash deal emails (popular + on sale)
+
+  @Column({ default: true })
+  promotionEmailsNewArrivalsEnabled: boolean; // Send new arrivals emails (newest products)
+
   // Bank Transfer Details (stored as JSON)
   @Column('jsonb', { nullable: true })
   bankTransferDetails: {

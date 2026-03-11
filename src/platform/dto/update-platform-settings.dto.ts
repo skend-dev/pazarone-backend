@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, Min, Max, IsObject, IsString, ValidateNested } from 'class-validator';
+import { IsNumber, IsOptional, Min, Max, IsObject, IsString, ValidateNested, IsBoolean } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -97,6 +97,51 @@ export class UpdatePlatformSettingsDto {
   @IsNumber()
   @Min(0)
   platformFeePercent?: number;
+
+  @ApiPropertyOptional({
+    description: 'Enable automatic promotion emails',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  automaticPromotionEmailsEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Promotion email schedule: daily or weekly',
+    example: 'daily',
+    enum: ['daily', 'weekly'],
+  })
+  @IsOptional()
+  @IsString()
+  promotionEmailSchedule?: 'daily' | 'weekly';
+
+  @ApiPropertyOptional({
+    description: 'Day of week for weekly schedule (0=Sun, 1=Mon, ..., 6=Sat)',
+    example: 1,
+    minimum: 0,
+    maximum: 6,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(6)
+  promotionEmailScheduleDayOfWeek?: number;
+
+  @ApiPropertyOptional({
+    description: 'Send flash deal emails (popular products on sale)',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  promotionEmailsFlashDealsEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Send new arrivals emails (newest products)',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  promotionEmailsNewArrivalsEnabled?: boolean;
 
   @ApiPropertyOptional({
     description: 'Bank transfer details for invoice payments',

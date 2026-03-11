@@ -40,13 +40,16 @@ export class Broadcast {
   @Column('int', { default: 0 })
   notificationsCreated: number;
 
+  @Column({ default: false })
+  isAutomated: boolean; // true = sent by scheduler (flash deals), false = manual admin broadcast
+
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column('uuid')
-  createdById: string;
+  @Column('uuid', { nullable: true })
+  createdById: string | null; // null when isAutomated = true
 
-  @ManyToOne(() => User)
+  @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'createdById' })
-  createdBy: User;
+  createdBy: User | null;
 }

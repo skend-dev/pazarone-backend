@@ -159,10 +159,12 @@ export class AdminBroadcastService {
 
   /**
    * List sent broadcasts with pagination
+   * @param isAutomated - when true, only automated; when false, only manual; undefined = all
    */
   async findAll(
     page: number = 1,
     limit: number = 20,
+    isAutomated?: boolean,
   ): Promise<{
     broadcasts: Array<{
       id: string;
@@ -174,18 +176,27 @@ export class AdminBroadcastService {
       featuredProductIds: string[] | null;
       emailSent: number;
       notificationsCreated: number;
+      isAutomated: boolean;
       createdAt: string;
       createdBy: { id: string; name: string; email: string };
     }>;
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
     const skip = (page - 1) * limit;
-    const [broadcasts, total] = await this.broadcastRepository.findAndCount({
-      relations: ['createdBy'],
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit,
-    });
+    const qb = this.broadcastRepository
+      .createQueryBuilder('b')
+      .leftJoinAndSelect('b.createdBy', 'createdBy')
+      .orderBy('b.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (isAutomated === true) {
+      qb.andWhere('b.isAutomated = :isAutomated', { isAutomated: true });
+    } else if (isAutomated === false) {
+      qb.andWhere('b.isAutomated = :isAutomated', { isAutomated: false });
+    }
+
+    const [broadcasts, total] = await qb.getManyAndCount();
 
     return {
       broadcasts: broadcasts.map((b) => ({
@@ -198,6 +209,7 @@ export class AdminBroadcastService {
         featuredProductIds: b.featuredProductIds,
         emailSent: b.emailSent,
         notificationsCreated: b.notificationsCreated,
+        isAutomated: b.isAutomated ?? false,
         createdAt: b.createdAt.toISOString(),
         createdBy: b.createdBy
           ? {
@@ -205,7 +217,7 @@ export class AdminBroadcastService {
               name: b.createdBy.name,
               email: b.createdBy.email ?? '',
             }
-          : { id: '', name: '', email: '' },
+          : { id: '', name: 'System', email: '' },
       })),
       pagination: {
         page,
@@ -361,6 +373,7 @@ export class AdminBroadcastService {
         featuredProductIds: dto.featuredProductIds ?? null,
         emailSent,
         notificationsCreated,
+        isAutomated: false,
         createdById,
       }),
     );

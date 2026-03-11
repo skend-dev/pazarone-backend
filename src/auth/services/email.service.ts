@@ -65,7 +65,7 @@ export class EmailService {
       return '';
     }
     return `
-      <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+      <div style="text-align: center; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid #e8ecef;">
         <a href="${this.frontendUrl}" style="display: inline-block; text-decoration: none;">
           <img src="${this.logoUrl}" alt="PazarOne" style="max-width: 180px; height: auto; display: block; margin: 0 auto; border: 0;" />
         </a>
@@ -78,11 +78,11 @@ export class EmailService {
    */
   private getEmailFooter(reason: string): string {
     return `
-      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 13px; line-height: 1.8;">
-        <p style="margin: 0 0 8px 0;"><strong>PazarOne</strong></p>
-        <p style="margin: 0 0 8px 0;">Official platform: <a href="${this.frontendUrl}" style="color: #3498db; text-decoration: none;">${this.frontendUrl}</a></p>
-        <p style="margin: 0 0 8px 0;">Support: <a href="mailto:${this.replyToEmail}" style="color: #3498db; text-decoration: none;">${this.replyToEmail}</a></p>
-        <p style="margin: 8px 0 0 0; color: #999; font-size: 12px;">You received this email because ${reason}.</p>
+      <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e8ecef; color: #6b7280; font-size: 13px; line-height: 1.7;">
+        <p style="margin: 0 0 6px 0; font-weight: 600; color: #1a1d21;">PazarOne</p>
+        <p style="margin: 0 0 6px 0;">Official platform: <a href="${this.frontendUrl}" style="color: #3b82f6; text-decoration: none;">${this.frontendUrl}</a></p>
+        <p style="margin: 0 0 6px 0;">Support: <a href="mailto:${this.replyToEmail}" style="color: #3b82f6; text-decoration: none;">${this.replyToEmail}</a></p>
+        <p style="margin: 12px 0 0 0; color: #9ca3af; font-size: 12px;">You received this email because ${reason}.</p>
       </div>
     `;
   }
@@ -647,44 +647,39 @@ You received this email because your password was changed on PazarOne.`,
                       ((product.price - product.salePrice) / product.price) * 100,
                     )
                   : 0;
+              const hasDiscount = discount > 0;
               return `
-        <div style="background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-          <div style="display: flex; gap: 15px;">
-            ${
-              product.imageUrl
-                ? `<div style="flex-shrink: 0;">
-                <img src="${product.imageUrl}" alt="${product.name}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;" />
-              </div>`
-                : ''
-            }
-            <div style="flex: 1;">
-              <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 18px;">
-                <a href="${product.productUrl}" style="color: #3498db; text-decoration: none;">${product.name}</a>
-              </h3>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-                <div>
-                  ${
-                    product.salePrice != null && product.price != null
-                      ? `<div style="color: #e74c3c; font-size: 20px; font-weight: bold;">
-                    ${formatPrice(product.salePrice)}
-                    <span style="color: #999; font-size: 14px; font-weight: normal; text-decoration: line-through; margin-left: 8px;">
-                      ${formatPrice(product.price)}
-                    </span>
-                    <span style="background-color: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-left: 8px;">
-                      -${discount}%
-                    </span>
-                  </div>`
-                      : `<div style="color: #2c3e50; font-size: 20px; font-weight: bold;">${formatPrice(effectivePrice)}</div>`
-                  }
-                </div>
-                <a href="${product.productUrl}" style="background-color: #3498db; color: #fff; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: 500;">
-                  View Product
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 20px; border-collapse: separate; border-spacing: 0; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #e8ecef;">
+          <tr>
+            ${product.imageUrl ? `
+            <td style="width: 140px; vertical-align: top; padding: 0;">
+              <a href="${product.productUrl}" style="display: block;">
+                <img src="${product.imageUrl}" alt="${product.name}" width="140" height="140" style="display: block; width: 140px; height: 140px; object-fit: cover;" />
+              </a>
+            </td>` : ''}
+            <td style="padding: 20px; vertical-align: top;">
+              <a href="${product.productUrl}" style="text-decoration: none; color: #1a1d21;">
+                <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: #1a1d21; line-height: 1.4;">${product.name}</h3>
+              </a>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top: 16px;">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    ${hasDiscount ? `
+                    <span style="font-size: 22px; font-weight: 700; color: #dc2626;">${formatPrice(product.salePrice)}</span>
+                    <span style="font-size: 14px; color: #9ca3af; text-decoration: line-through; margin-left: 8px;">${formatPrice(product.price)}</span>
+                    <span style="display: inline-block; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-left: 10px;">-${discount}%</span>
+                    ` : `
+                    <span style="font-size: 22px; font-weight: 700; color: #1a1d21;">${formatPrice(effectivePrice)}</span>
+                    `}
+                  </td>
+                  <td style="padding-left: 16px; vertical-align: middle;">
+                    <a href="${product.productUrl}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">View Product →</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
             })
             .join('')
         : '';
@@ -692,8 +687,8 @@ You received this email because your password was changed on PazarOne.`,
     const productsSection =
       products.length > 0
         ? `
-      <div style="margin: 30px 0;">
-        <h2 style="color: #2c3e50; margin-top: 0; font-size: 22px;">Featured Products</h2>
+      <div style="margin: 32px 0;">
+        <h2 style="color: #1a1d21; margin: 0 0 20px 0; font-size: 20px; font-weight: 600;">Featured Products</h2>
         ${productCardsHtml}
       </div>
     `
@@ -705,13 +700,14 @@ You received this email because your password was changed on PazarOne.`,
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${title}</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1a1d21; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f4f6f8;">
+          <div style="background-color: #ffffff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
             ${this.getLogoHtml()}
-            <h1 style="color: #2c3e50; margin-top: 0; font-size: 24px;">${title}</h1>
-            <p style="font-size: 16px; color: #666;">Hello ${name},</p>
-            <p style="font-size: 16px; color: #333; white-space: pre-wrap;">${message}</p>
+            <h1 style="color: #1a1d21; margin: 0 0 16px 0; font-size: 24px; font-weight: 700;">${title}</h1>
+            <p style="font-size: 16px; color: #4a5568; margin: 0 0 12px 0;">Hello ${name},</p>
+            <p style="font-size: 16px; color: #1a1d21; white-space: pre-wrap; margin: 0;">${message}</p>
             ${productsSection}
             ${this.getEmailFooter('you are registered on PazarOne')}
           </div>
@@ -748,8 +744,14 @@ You received this email because your password was changed on PazarOne.`,
   ): string {
     const itemsHtml = items
       .map(
-        (item) =>
-          `<tr><td>${item.productName}</td><td style="text-align: center;">${item.quantity}</td><td style="text-align: right;">${item.price.toFixed(2)} MKD</td></tr>`,
+        (item, i) => {
+          const rowBg = i % 2 === 0 ? '#ffffff' : '#fafafa';
+          return `<tr style="background-color: ${rowBg};">
+            <td style="padding: 14px 16px; border-bottom: 1px solid #e8ecef; color: #1a1d21; font-size: 15px;">${item.productName}</td>
+            <td style="padding: 14px 16px; border-bottom: 1px solid #e8ecef; text-align: center; color: #4a5568; font-size: 14px;">${item.quantity}</td>
+            <td style="padding: 14px 16px; border-bottom: 1px solid #e8ecef; text-align: right; color: #1a1d21; font-weight: 500;">${item.price.toFixed(2)} MKD</td>
+          </tr>`;
+        },
       )
       .join('');
 
@@ -759,34 +761,38 @@ You received this email because your password was changed on PazarOne.`,
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Order Confirmation - ${orderNumber}</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1a1d21; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f4f6f8;">
+          <div style="background-color: #ffffff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
             ${this.getLogoHtml()}
-            <h1 style="color: #27ae60; margin-top: 0;">Order Confirmed!</h1>
-            <p>Thank you for your order! We've received your order and will process it shortly.</p>
-            <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h2 style="color: #2c3e50; margin-top: 0;">Order #${orderNumber}</h2>
-              <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px 24px; border-radius: 10px; margin-bottom: 24px;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700;">Order Confirmed!</h1>
+              <p style="color: rgba(255,255,255,0.95); margin: 8px 0 0 0; font-size: 15px;">Thank you for your order. We've received it and will process it shortly.</p>
+            </div>
+            <p style="color: #4a5568; font-size: 15px; margin: 0 0 24px 0;">Order details:</p>
+            <div style="background-color: #f8fafc; padding: 24px; border-radius: 10px; border: 1px solid #e8ecef;">
+              <h2 style="color: #1a1d21; margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Order #${orderNumber}</h2>
+              <table style="width: 100%; border-collapse: collapse;">
                 <thead>
-                  <tr style="background-color: #ecf0f1;">
-                    <th style="padding: 10px; text-align: left;">Item</th>
-                    <th style="padding: 10px; text-align: center;">Quantity</th>
-                    <th style="padding: 10px; text-align: right;">Price</th>
+                  <tr style="background-color: #1a1d21;">
+                    <th style="padding: 12px 16px; text-align: left; color: #ffffff; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Product</th>
+                    <th style="padding: 12px 16px; text-align: center; color: #ffffff; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Qty</th>
+                    <th style="padding: 12px 16px; text-align: right; color: #ffffff; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Price</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${itemsHtml}
                 </tbody>
                 <tfoot>
-                  <tr style="border-top: 2px solid #3498db;">
-                    <td colspan="2" style="padding: 10px; font-weight: bold; text-align: right;">Total:</td>
-                    <td style="padding: 10px; font-weight: bold; text-align: right;">${totalAmount.toFixed(2)} MKD</td>
+                  <tr style="background-color: #e8f5e9;">
+                    <td colspan="2" style="padding: 16px; font-weight: 700; text-align: right; color: #1a1d21; font-size: 16px;">Total:</td>
+                    <td style="padding: 16px; font-weight: 700; text-align: right; color: #059669; font-size: 18px;">${totalAmount.toFixed(2)} MKD</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
-            <p>You will receive another email when your order ships.</p>
+            <p style="color: #6b7280; font-size: 14px; margin: 24px 0 0 0;">You will receive another email when your order ships.</p>
             ${this.getEmailFooter('you made an order on PazarOne')}
           </div>
         </body>

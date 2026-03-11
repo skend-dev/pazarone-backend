@@ -55,5 +55,8 @@ export class OrderItem {
 
   @Column('jsonb', { nullable: true })
   variantCombination: Record<string, string> | null; // Store variant combination for order history (e.g., { "Size": "XL", "Color": "Red" })
+
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  affiliateCommissionPercent: number | null; // Snapshot at order time - used for fee calculations; future product changes don't affect past orders
 }
 

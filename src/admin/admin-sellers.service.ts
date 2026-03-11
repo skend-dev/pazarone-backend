@@ -365,10 +365,13 @@ export class AdminSellersService {
             }
           }
           
-          if (item.product && item.product.affiliateCommission > 0) {
-            // Calculate affiliate commission based on product's affiliate commission percentage
-            totalCommission +=
-              (itemTotal * item.product.affiliateCommission) / 100;
+          const commissionPercent =
+            item.affiliateCommissionPercent ??
+            item.product?.affiliateCommission ??
+            0;
+          if (commissionPercent > 0) {
+            // Use snapshotted commission from order time; fallback to product for legacy orders
+            totalCommission += (itemTotal * commissionPercent) / 100;
           }
         }
         // Charged as affiliate commission (platform keeps it)
@@ -586,10 +589,11 @@ export class AdminSellersService {
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
-    // Build order query
+    // Build order query (include items.product for commission fallback on legacy orders)
     const orderQueryBuilder = this.ordersRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.items', 'items')
+      .leftJoinAndSelect('items.product', 'itemProduct')
       .where('order.sellerId = :sellerId', { sellerId })
       .andWhere('order.status = :status', { status: OrderStatus.DELIVERED })
       .orderBy('order.createdAt', 'DESC')

@@ -38,6 +38,12 @@ export class AdminBroadcastController {
     type: Number,
     description: 'Items per page (default: 20)',
   })
+  @ApiQuery({
+    name: 'isAutomated',
+    required: false,
+    type: Boolean,
+    description: 'Filter by automated broadcasts only (true) or manual only (false)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Broadcasts retrieved successfully',
@@ -94,10 +100,17 @@ export class AdminBroadcastController {
   listBroadcasts(
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('isAutomated') isAutomated?: string,
   ) {
     const pageNum = page ? parseInt(String(page), 10) : 1;
     const limitNum = limit ? parseInt(String(limit), 10) : 20;
-    return this.adminBroadcastService.findAll(pageNum, limitNum);
+    const isAutomatedFilter =
+      isAutomated === 'true' ? true : isAutomated === 'false' ? false : undefined;
+    return this.adminBroadcastService.findAll(
+      pageNum,
+      limitNum,
+      isAutomatedFilter,
+    );
   }
 
   @Post()
