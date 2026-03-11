@@ -490,6 +490,7 @@ export class ProductsService {
       where: { id },
       relations: [
         'category',
+        'category.parent', // Needed for subcategory resolution in edit form
         'variantAttributes',
         'variantAttributes.values',
         'variants',
@@ -1200,6 +1201,30 @@ export class ProductsService {
   }
 
   /**
+   * Calculate discount percent for a product with active sale
+   */
+  private getDiscountPercent(product: Product): number | null {
+    if (!this.isSalePriceValid(product.salePrice, product.salePriceExpiresAt)) {
+      return null;
+    }
+    const salePrice =
+      product.salePrice != null ? parseFloat(String(product.salePrice)) : null;
+    if (salePrice == null) return null;
+
+    const regularPrice =
+      product.regularPrice != null
+        ? parseFloat(String(product.regularPrice))
+        : product.basePrice != null
+          ? parseFloat(String(product.basePrice))
+          : product.price != null
+            ? parseFloat(String(product.price))
+            : null;
+
+    if (regularPrice == null || salePrice >= regularPrice) return null;
+    return Math.round(((regularPrice - salePrice) / regularPrice) * 100);
+  }
+
+  /**
    * Get all product sections for the landing page in one go.
    * Runs 5 queries in parallel so each section has distinct products and intent.
    */
@@ -1209,6 +1234,7 @@ export class ProductsService {
     hotDeals: Product[];
     bestSellers: Product[];
     newArrivals: Product[];
+    maxDiscountPercent: number;
   }> {
     const [flashRes, trendingRes, hotDealsRes, bestSellersRes, newArrivalsRes] =
       await Promise.all([
@@ -1237,12 +1263,25 @@ export class ProductsService {
         }),
       ]);
 
+    const allDealProducts = [
+      ...flashRes.products,
+      ...hotDealsRes.products,
+    ];
+    let maxDiscountPercent = 50;
+    for (const p of allDealProducts) {
+      const percent = this.getDiscountPercent(p);
+      if (percent != null && percent > maxDiscountPercent) {
+        maxDiscountPercent = percent;
+      }
+    }
+
     return {
       flashDeals: flashRes.products,
       trending: trendingRes.products,
       hotDeals: hotDealsRes.products,
       bestSellers: bestSellersRes.products,
       newArrivals: newArrivalsRes.products,
+      maxDiscountPercent,
     };
   }
 
