@@ -649,31 +649,31 @@ You received this email because your password was changed on PazarOne.`,
                   : 0;
               const hasDiscount = discount > 0;
               return `
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 20px; border-collapse: separate; border-spacing: 0; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #e8ecef;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" class="product-card" style="margin-bottom: 20px; border-collapse: separate; border-spacing: 0; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #e8ecef;">
           <tr>
             ${product.imageUrl ? `
-            <td style="width: 140px; vertical-align: top; padding: 0;">
+            <td class="product-img-td" style="width: 140px; vertical-align: top; padding: 0;">
               <a href="${product.productUrl}" style="display: block;">
-                <img src="${product.imageUrl}" alt="${product.name}" width="140" height="140" style="display: block; width: 140px; height: 140px; object-fit: cover;" />
+                <img src="${product.imageUrl}" alt="${product.name}" class="product-img" width="140" height="140" style="display: block; width: 140px; height: 140px; object-fit: cover;" />
               </a>
             </td>` : ''}
-            <td style="padding: 20px; vertical-align: top;">
+            <td class="product-content-td" style="padding: 20px; vertical-align: top;">
               <a href="${product.productUrl}" style="text-decoration: none; color: #1a1d21;">
                 <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: #1a1d21; line-height: 1.4;">${product.name}</h3>
               </a>
-              <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top: 16px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" class="price-action-table" style="margin-top: 16px; width: 100%;">
                 <tr>
-                  <td style="vertical-align: middle;">
+                  <td class="price-td" style="vertical-align: middle;">
                     ${hasDiscount ? `
                     <span style="font-size: 22px; font-weight: 700; color: #dc2626;">${formatPrice(product.salePrice)}</span>
                     <span style="font-size: 14px; color: #9ca3af; text-decoration: line-through; margin-left: 8px;">${formatPrice(product.price)}</span>
-                    <span style="display: inline-block; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-left: 10px;">-${discount}%</span>
+                    <span class="discount-badge" style="display: inline-block; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-left: 10px; vertical-align: middle;">-${discount}%</span>
                     ` : `
                     <span style="font-size: 22px; font-weight: 700; color: #1a1d21;">${formatPrice(effectivePrice)}</span>
                     `}
                   </td>
-                  <td style="padding-left: 16px; vertical-align: middle;">
-                    <a href="${product.productUrl}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">View Product →</a>
+                  <td class="action-td" style="padding-left: 16px; vertical-align: middle; text-align: right;">
+                    <a href="${product.productUrl}" class="action-btn" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600; white-space: nowrap;">View Product →</a>
                   </td>
                 </tr>
               </table>
@@ -701,15 +701,32 @@ You received this email because your password was changed on PazarOne.`,
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>${title}</title>
+          <style>
+            @media screen and (max-width: 600px) {
+              .email-wrapper { padding: 12px !important; }
+              .email-card { padding: 16px !important; }
+              .product-card { display: block !important; width: 100% !important; }
+              .product-img-td { display: block !important; width: 100% !important; padding: 0 !important; border-bottom: 1px solid #f0f0f0 !important; }
+              .product-img { width: 100% !important; height: auto !important; max-width: 100% !important; object-fit: contain !important; margin: 0 auto !important; border-bottom-left-radius: 0 !important; border-top-right-radius: 12px !important; }
+              .product-content-td { display: block !important; width: 100% !important; padding: 16px !important; box-sizing: border-box !important; }
+              .price-action-table, .price-action-table tbody, .price-action-table tr { display: block !important; width: 100% !important; }
+              .price-td { display: block !important; width: 100% !important; text-align: left !important; }
+              .action-td { display: block !important; width: 100% !important; padding-left: 0 !important; padding-top: 16px !important; text-align: center !important; }
+              .action-btn { display: block !important; width: 100% !important; box-sizing: border-box !important; padding: 14px 20px !important; }
+              .discount-badge { margin-top: 8px !important; margin-left: 0 !important; display: inline-block !important; }
+            }
+          </style>
         </head>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1a1d21; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f4f6f8;">
-          <div style="background-color: #ffffff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-            ${this.getLogoHtml()}
-            <h1 style="color: #1a1d21; margin: 0 0 16px 0; font-size: 24px; font-weight: 700;">${title}</h1>
-            <p style="font-size: 16px; color: #4a5568; margin: 0 0 12px 0;">Hello ${name},</p>
-            <p style="font-size: 16px; color: #1a1d21; white-space: pre-wrap; margin: 0;">${message}</p>
-            ${productsSection}
-            ${this.getEmailFooter('you are registered on PazarOne')}
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1a1d21; margin: 0; padding: 0; background-color: #f4f6f8;">
+          <div class="email-wrapper" style="max-width: 600px; margin: 0 auto; padding: 24px;">
+            <div class="email-card" style="background-color: #ffffff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+              ${this.getLogoHtml()}
+              <h1 style="color: #1a1d21; margin: 0 0 16px 0; font-size: 24px; font-weight: 700;">${title}</h1>
+              <p style="font-size: 16px; color: #4a5568; margin: 0 0 12px 0;">Hello ${name},</p>
+              <p style="font-size: 16px; color: #1a1d21; white-space: pre-wrap; margin: 0;">${message}</p>
+              ${productsSection}
+              ${this.getEmailFooter('you are registered on PazarOne')}
+            </div>
           </div>
         </body>
       </html>
@@ -1148,7 +1165,7 @@ Support: ${this.replyToEmail}`;
 
       return `
         <div style="background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-          <div style="display: flex; gap: 15px;">
+          <div class="flex-col-mobile" style="display: flex; gap: 15px;">
             ${product.imageUrl
               ? `<div style="flex-shrink: 0;">
                   <img src="${product.imageUrl}" alt="${product.name}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;" />
@@ -1161,7 +1178,7 @@ Support: ${this.replyToEmail}`;
               <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; line-height: 1.4;">
                 ${product.description.substring(0, 100)}${product.description.length > 100 ? '...' : ''}
               </p>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+              <div class="price-btn-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
                 <div>
                   ${product.salePrice && product.regularPrice
                     ? `<div style="color: #e74c3c; font-size: 20px; font-weight: bold;">
@@ -1169,7 +1186,7 @@ Support: ${this.replyToEmail}`;
                         <span style="color: #999; font-size: 14px; font-weight: normal; text-decoration: line-through; margin-left: 8px;">
                           ${formatPrice(product.regularPrice)}
                         </span>
-                        <span style="background-color: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-left: 8px;">
+                        <span style="display: inline-block; background-color: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-left: 8px; margin-top: 4px;">
                           -${discount}%
                         </span>
                       </div>`
@@ -1178,7 +1195,7 @@ Support: ${this.replyToEmail}`;
                     Commission: ${product.affiliateCommission.toFixed(1)}%
                   </div>
                 </div>
-                <a href="${productUrl}" style="background-color: #3498db; color: #fff; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: 500;">
+                <a href="${productUrl}" style="background-color: #3498db; color: #fff; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: 500; display: inline-block;">
                   View Product
                 </a>
               </div>
@@ -1215,19 +1232,32 @@ Support: ${this.replyToEmail}`;
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            @media screen and (max-width: 600px) {
+              .email-wrapper { padding: 10px !important; }
+              .email-card { padding: 15px !important; }
+              .flex-col-mobile { flex-direction: column !important; }
+              .flex-col-mobile > div { width: 100% !important; display: block !important; padding: 0 !important; }
+              .flex-col-mobile img { width: 100% !important; height: auto !important; max-height: 250px !important; object-fit: contain !important; }
+              .stats-grid { grid-template-columns: 1fr !important; }
+              .price-btn-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+              .price-btn-row > a { text-align: center !important; }
+            }
+          </style>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
-            ${this.getLogoHtml()}
-            <h1 style="color: #2c3e50; margin-top: 0; font-size: 28px;">Hello ${name}!</h1>
-            <p style="font-size: 16px; color: #666; margin-bottom: 30px;">
-              ${motivationalMessage}
-            </p>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f0f2f5;">
+          <div class="email-wrapper" style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div class="email-card" style="background-color: #f8f9fa; padding: 30px; border-radius: 8px;">
+              ${this.getLogoHtml()}
+              <h1 style="color: #2c3e50; margin-top: 0; font-size: 28px;">Hello ${name}!</h1>
+              <p style="font-size: 16px; color: #666; margin-bottom: 30px;">
+                ${motivationalMessage}
+              </p>
 
-            <!-- Performance Stats Section -->
-            <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3498db;">
-              <h2 style="color: #2c3e50; margin-top: 0; font-size: 22px;">Your Performance</h2>
-              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 15px;">
+              <!-- Performance Stats Section -->
+              <div style="background-color: #fff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3498db;">
+                <h2 style="color: #2c3e50; margin-top: 0; font-size: 22px;">Your Performance</h2>
+                <div class="stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 15px;">
                 <div>
                   <div style="color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 4px;">Total Earnings</div>
                   <div style="color: #27ae60; font-size: 24px; font-weight: bold;">${stats.totalEarnings.toFixed(2)} den</div>
@@ -1294,6 +1324,7 @@ Support: ${this.replyToEmail}`;
             </div>
 
             ${this.getEmailFooter('you are an affiliate on PazarOne')}
+            </div>
           </div>
         </body>
       </html>
