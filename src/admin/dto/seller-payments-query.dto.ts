@@ -1,5 +1,5 @@
-import { IsOptional, IsNumber, Min, IsString, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsNumber, Min, IsString, IsEnum, IsBoolean } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum PaymentMethod {
@@ -35,5 +35,32 @@ export class SellerPaymentsQueryDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  @ApiPropertyOptional({
+    example: 'totalOutstanding',
+    enum: ['totalOutstanding', 'codOutstanding', 'cardOutstanding'],
+    description: 'Sort by outstanding amount (default: totalOutstanding)',
+  })
+  @IsOptional()
+  @IsString()
+  sortBy?: 'totalOutstanding' | 'codOutstanding' | 'cardOutstanding';
+
+  @ApiPropertyOptional({
+    example: 'desc',
+    enum: ['asc', 'desc'],
+    description: 'Sort order - desc for biggest first (default)',
+  })
+  @IsOptional()
+  @IsString()
+  sortOrder?: 'asc' | 'desc';
+
+  @ApiPropertyOptional({
+    description: 'Include platform-wide totals (slower). Set false for faster table load.',
+    default: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'false' || value === false ? false : true)
+  @IsBoolean()
+  includeTotals?: boolean;
 }
 

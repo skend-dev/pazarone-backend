@@ -73,7 +73,8 @@ export class Product {
   @Column('int', { default: 0 })
   stock: number;
 
-  @Column({ type: 'varchar', unique: true, nullable: true })
+  /** SKU is unique per seller (sellerId + sku). Different sellers may use the same SKU. */
+  @Column({ type: 'varchar', nullable: true })
   sku: string | null;
 
   @Column('jsonb', { nullable: true })
