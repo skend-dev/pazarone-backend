@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { User, UserType } from '../users/entities/user.entity';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product, ProductStatus } from '../products/entities/product.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { AffiliateCommission } from '../affiliate/entities/affiliate-commission.entity';
@@ -27,6 +28,8 @@ export class AdminSellersService {
     private usersRepository: Repository<User>,
     @InjectRepository(Order)
     private ordersRepository: Repository<Order>,
+    @InjectRepository(OrderItem)
+    private orderItemRepository: Repository<OrderItem>,
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
     @InjectRepository(SellerSettings)
@@ -395,62 +398,225 @@ export class AdminSellersService {
     };
   }
 
-  // Get seller payment summaries
+  // Get seller payment summaries (optimized: only sellers with outstanding, batch-loaded, sortable)
   async getSellerPaymentSummaries(query: SellerPaymentsQueryDto) {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
+    const sortBy = query.sortBy || 'totalOutstanding';
+    const sortOrder = query.sortOrder || 'desc';
+    const includeTotals = query.includeTotals !== false;
 
-    // Build base query for matching sellers (used for totals, pagination, and count)
-    const baseQueryBuilder = this.usersRepository
-      .createQueryBuilder('user')
-      .where('user.userType = :userType', { userType: UserType.SELLER })
-      .orderBy('user.createdAt', 'DESC');
+    // 1. Get seller IDs that have outstanding orders (massive perf win vs all 5000 sellers)
+    const outstandingQb = this.ordersRepository
+      .createQueryBuilder('order')
+      .select('DISTINCT order.sellerId')
+      .where('order.status = :status', { status: OrderStatus.DELIVERED });
 
-    if (query.search) {
-      baseQueryBuilder.andWhere(
-        '(user.name ILIKE :search OR user.email ILIKE :search)',
-        { search: `%${query.search}%` },
+    if (query.paymentMethod === PaymentMethod.COD) {
+      outstandingQb
+        .andWhere('order.paymentMethod = :pm', { pm: 'cod' })
+        .andWhere('order.sellerPaid = false');
+    } else if (query.paymentMethod === PaymentMethod.CARD) {
+      outstandingQb
+        .andWhere('order.paymentMethod = :pm', { pm: 'card' })
+        .andWhere('order.adminPaid = false');
+    } else {
+      outstandingQb.andWhere(
+        '((order.paymentMethod = :cod AND order.sellerPaid = false) OR (order.paymentMethod = :card AND order.adminPaid = false))',
+        { cod: 'cod', card: 'card' },
       );
     }
 
-    // Get total count for correct pagination (without loading all entities)
-    const total = await baseQueryBuilder.clone().getCount();
+    const outstandingRows = await outstandingQb.getRawMany<{ sellerId: string }>();
+    let sellerIdsWithOutstanding = outstandingRows
+      .map((r) => r.sellerId)
+      .filter(Boolean);
+    if (sellerIdsWithOutstanding.length === 0) {
+      return {
+        summaries: [],
+        pagination: { page, limit, total: 0, totalPages: 0 },
+        totals: includeTotals
+          ? {
+              totalCodOutstandingMKD: 0,
+              totalCodOutstandingEUR: 0,
+              totalCardOutstandingMKD: 0,
+              totalCardOutstandingEUR: 0,
+              totalSellersWithOutstanding: 0,
+              codSellersCount: 0,
+              cardSellersCount: 0,
+            }
+          : undefined,
+      };
+    }
 
-    // Fetch ALL matching sellers for accurate platform-wide totals (capped at 5000 for performance)
-    const allUsersForTotals = await baseQueryBuilder
-      .clone()
-      .take(5000)
-      .getMany();
+    // 2. Get users for those sellers (with optional search)
+    const usersQb = this.usersRepository
+      .createQueryBuilder('user')
+      .where('user.userType = :userType', { userType: UserType.SELLER })
+      .andWhere('user.id IN (:...ids)', { ids: sellerIdsWithOutstanding });
 
-    // Fetch only the current page of sellers for the table (efficient pagination)
-    const paginatedUsers = await baseQueryBuilder
-      .clone()
-      .skip(skip)
-      .take(limit)
-      .getMany();
-
-    // Helper to compute summary for a single seller
-    const computeSellerSummary = async (user: User) => {
-      const settings = await this.sellerSettingsRepository.findOne({
-        where: { sellerId: user.id },
+    if (query.search) {
+      usersQb.andWhere('(user.name ILIKE :search OR user.email ILIKE :search)', {
+        search: `%${query.search}%`,
       });
+    }
 
-      const orderQueryBuilder = this.ordersRepository
-        .createQueryBuilder('order')
-        .where('order.sellerId = :sellerId', { sellerId: user.id })
-        .andWhere('order.status = :status', {
-          status: OrderStatus.DELIVERED,
-        });
+    const users = await usersQb.getMany();
+    const userIds = users.map((u) => u.id);
+    if (userIds.length === 0) {
+      return {
+        summaries: [],
+        pagination: { page, limit, total: 0, totalPages: 0 },
+        totals: includeTotals ? {
+          totalCodOutstandingMKD: 0,
+          totalCodOutstandingEUR: 0,
+          totalCardOutstandingMKD: 0,
+          totalCardOutstandingEUR: 0,
+          totalSellersWithOutstanding: 0,
+          codSellersCount: 0,
+          cardSellersCount: 0,
+        } : undefined,
+      };
+    }
 
-      if (query.paymentMethod) {
-        orderQueryBuilder.andWhere('order.paymentMethod = :paymentMethod', {
-          paymentMethod: query.paymentMethod,
-        });
+    // 3. Batch load: settings, orders, affiliate commissions, order items
+    const defaultPlatformFee =
+      await this.platformSettingsService.getPlatformFeePercent();
+    const allSettings = await this.sellerSettingsRepository.find({
+      where: { sellerId: In(userIds) },
+    });
+    const settingsBySeller = new Map(allSettings.map((s) => [s.sellerId, s]));
+    const platformFeeBySeller = new Map<string, number>();
+    for (const uid of userIds) {
+      const s = settingsBySeller.get(uid);
+      const pct =
+        s?.platformFeePercent != null
+          ? parseFloat(s.platformFeePercent.toString())
+          : defaultPlatformFee;
+      platformFeeBySeller.set(uid, pct);
+    }
+
+    const ordersQb = this.ordersRepository
+      .createQueryBuilder('order')
+      .where('order.sellerId IN (:...ids)', { ids: userIds })
+      .andWhere('order.status = :status', { status: OrderStatus.DELIVERED });
+
+    if (query.paymentMethod) {
+      ordersQb.andWhere('order.paymentMethod = :paymentMethod', {
+        paymentMethod: query.paymentMethod,
+      });
+    }
+
+    const orders = await ordersQb.getMany();
+    const unpaidOrders = orders.filter(
+      (o) =>
+        (o.paymentMethod === 'cod' && !o.sellerPaid) ||
+        (o.paymentMethod === 'card' && !o.adminPaid),
+    );
+    const orderIds = unpaidOrders.map((o) => o.id);
+
+    let affiliateByOrder = new Map<string, { mkd: number; eur: number }>();
+    if (orderIds.length > 0) {
+      const commissions = await this.affiliateCommissionRepository.find({
+        where: { orderId: In(orderIds) },
+      });
+      const orderIdsWithAffiliate = new Set(commissions.map((c) => c.orderId));
+      const ordersNeedingItems = unpaidOrders.filter(
+        (o) => !orderIdsWithAffiliate.has(o.id),
+      );
+
+      for (const c of commissions) {
+        const order = unpaidOrders.find((o) => o.id === c.orderId);
+        if (!order) continue;
+        const amt = parseFloat(c.commissionAmount.toString());
+        const curr = order.sellerBaseCurrency || 'MKD';
+        const existing = affiliateByOrder.get(c.orderId) || { mkd: 0, eur: 0 };
+        if (curr === 'MKD') existing.mkd += amt;
+        else existing.eur += amt;
+        affiliateByOrder.set(c.orderId, existing);
       }
 
-      const orders = await orderQueryBuilder.getMany();
+      if (ordersNeedingItems.length > 0) {
+        const orderIdsNeeding = ordersNeedingItems.map((o) => o.id);
+        const items = await this.orderItemRepository.find({
+          where: { orderId: In(orderIdsNeeding) },
+        });
+        const itemsByOrderId = new Map<string, OrderItem[]>();
+        for (const item of items) {
+          const arr = itemsByOrderId.get(item.orderId) || [];
+          arr.push(item);
+          itemsByOrderId.set(item.orderId, arr);
+        }
+        for (const o of ordersNeedingItems) {
+          const orderItems = itemsByOrderId.get(o.id) || [];
+          let totalCommission = 0;
+          for (const item of orderItems) {
+            let itemTotal: number;
+            if (item.basePrice != null && item.basePrice !== undefined) {
+              itemTotal =
+                parseFloat(item.basePrice.toString()) * item.quantity;
+            } else {
+              const buyerPrice =
+                parseFloat(item.price.toString()) * item.quantity;
+              const ex = o.exchangeRate || 61.5;
+              if (
+                o.buyerCurrency === 'EUR' &&
+                o.sellerBaseCurrency === 'MKD'
+              ) {
+                itemTotal = buyerPrice * ex;
+              } else if (
+                o.buyerCurrency === 'MKD' &&
+                o.sellerBaseCurrency === 'EUR'
+              ) {
+                itemTotal = buyerPrice / ex;
+              } else {
+                itemTotal = buyerPrice;
+              }
+            }
+            const commissionPercent = item.affiliateCommissionPercent ?? 0;
+            if (commissionPercent > 0) {
+              totalCommission += (itemTotal * commissionPercent) / 100;
+            }
+          }
+          const curr = o.sellerBaseCurrency || 'MKD';
+          const existing = affiliateByOrder.get(o.id) || { mkd: 0, eur: 0 };
+          if (curr === 'MKD') existing.mkd = totalCommission;
+          else existing.eur = totalCommission;
+          affiliateByOrder.set(o.id, existing);
+        }
+      }
+    }
 
+    const ordersBySeller = new Map<string, typeof unpaidOrders>();
+    for (const o of unpaidOrders) {
+      const arr = ordersBySeller.get(o.sellerId) || [];
+      arr.push(o);
+      ordersBySeller.set(o.sellerId, arr);
+    }
+
+    // 4. Compute summaries per seller (no DB calls)
+    const allSummaries: Array<{
+      sellerId: string;
+      sellerName: string;
+      sellerEmail: string;
+      storeName: string | null;
+      codOutstanding: number;
+      codOutstandingMKD: number;
+      codOutstandingEUR: number;
+      codOrderCount: number;
+      cardOutstanding: number;
+      cardOutstandingMKD: number;
+      cardOutstandingEUR: number;
+      cardOrderCount: number;
+      totalOutstanding: number;
+      totalOutstandingMKD: number;
+      totalOutstandingEUR: number;
+    }> = [];
+
+    for (const user of users) {
+      const ordersForSeller = ordersBySeller.get(user.id) || [];
+      const platformFeePercent = platformFeeBySeller.get(user.id) ?? defaultPlatformFee;
       let codOutstandingMKD = 0;
       let codOutstandingEUR = 0;
       let codOrderCount = 0;
@@ -458,23 +624,25 @@ export class AdminSellersService {
       let cardOutstandingEUR = 0;
       let cardOrderCount = 0;
 
-      for (const order of orders) {
+      for (const order of ordersForSeller) {
+        const orderTotalBase = order.totalAmountBase
+          ? parseFloat(order.totalAmountBase.toString())
+          : parseFloat(order.totalAmount.toString());
+        const affiliate = affiliateByOrder.get(order.id) || { mkd: 0, eur: 0 };
+        const affiliateCommission = affiliate.mkd + affiliate.eur;
+        const platformFee = (orderTotalBase * platformFeePercent) / 100;
+        const sellerCurrency = order.sellerBaseCurrency || 'MKD';
+
         if (order.paymentMethod === 'cod' && !order.sellerPaid) {
           codOrderCount++;
-          const fees = await this.calculateOrderFees(order, user.id);
-          codOutstandingMKD +=
-            fees.platformFeeMKD + fees.affiliateCommissionMKD;
-          codOutstandingEUR +=
-            fees.platformFeeEUR + fees.affiliateCommissionEUR;
+          const platformMKD = sellerCurrency === 'MKD' ? platformFee : 0;
+          const platformEUR = sellerCurrency === 'EUR' ? platformFee : 0;
+          codOutstandingMKD += platformMKD + affiliate.mkd;
+          codOutstandingEUR += platformEUR + affiliate.eur;
         } else if (order.paymentMethod === 'card' && !order.adminPaid) {
           cardOrderCount++;
-          const orderTotalBase = order.totalAmountBase
-            ? parseFloat(order.totalAmountBase.toString())
-            : parseFloat(order.totalAmount.toString());
-          const fees = await this.calculateOrderFees(order, user.id);
           const sellerAmount =
-            orderTotalBase - fees.platformFee - fees.affiliateCommission;
-          const sellerCurrency = order.sellerBaseCurrency || 'MKD';
+            orderTotalBase - platformFee - affiliateCommission;
           if (sellerCurrency === 'MKD') {
             cardOutstandingMKD += sellerAmount;
           } else if (sellerCurrency === 'EUR') {
@@ -485,12 +653,14 @@ export class AdminSellersService {
 
       const codOutstanding = codOutstandingMKD + codOutstandingEUR;
       const cardOutstanding = cardOutstandingMKD + cardOutstandingEUR;
+      const totalOutstandingMKD = cardOutstandingMKD - codOutstandingMKD;
+      const totalOutstandingEUR = cardOutstandingEUR - codOutstandingEUR;
 
-      return {
+      allSummaries.push({
         sellerId: user.id,
         sellerName: user.name,
-        sellerEmail: user.email,
-        storeName: settings?.storeName || null,
+        sellerEmail: user.email ?? '',
+        storeName: settingsBySeller.get(user.id)?.storeName || null,
         codOutstanding,
         codOutstandingMKD,
         codOutstandingEUR,
@@ -500,67 +670,77 @@ export class AdminSellersService {
         cardOutstandingEUR,
         cardOrderCount,
         totalOutstanding: cardOutstanding - codOutstanding,
-        totalOutstandingMKD: cardOutstandingMKD - codOutstandingMKD,
-        totalOutstandingEUR: cardOutstandingEUR - codOutstandingEUR,
-      };
-    };
+        totalOutstandingMKD,
+        totalOutstandingEUR,
+      });
+    }
 
-    // Compute summaries for ALL sellers (capped) - for platform-wide totals only
-    const allSummariesForTotals = await Promise.all(
-      allUsersForTotals.map((user) => computeSellerSummary(user)),
-    );
+    // 5. Sort (default: biggest owe first)
+    const key =
+      sortBy === 'codOutstanding'
+        ? 'codOutstanding'
+        : sortBy === 'cardOutstanding'
+          ? 'cardOutstanding'
+          : 'totalOutstanding';
+    const dir = sortOrder === 'asc' ? 1 : -1;
+    allSummaries.sort((a, b) => {
+      const va = a[key] ?? 0;
+      const vb = b[key] ?? 0;
+      return (va - vb) * dir;
+    });
 
-    // Platform-wide totals from all sellers (up to 5000)
-    const totals = allSummariesForTotals.reduce(
-      (acc, s) => ({
-        totalCodOutstandingMKD:
-          acc.totalCodOutstandingMKD + (s.codOutstandingMKD || 0),
-        totalCodOutstandingEUR:
-          acc.totalCodOutstandingEUR + (s.codOutstandingEUR || 0),
-        totalCardOutstandingMKD:
-          acc.totalCardOutstandingMKD + (s.cardOutstandingMKD || 0),
-        totalCardOutstandingEUR:
-          acc.totalCardOutstandingEUR + (s.cardOutstandingEUR || 0),
-        totalSellersWithOutstanding:
-          acc.totalSellersWithOutstanding +
-          (s.codOutstanding > 0 || s.cardOutstanding > 0 ? 1 : 0),
-        codSellersCount: acc.codSellersCount + (s.codOutstanding > 0 ? 1 : 0),
-        cardSellersCount:
-          acc.cardSellersCount + (s.cardOutstanding > 0 ? 1 : 0),
-      }),
-      {
-        totalCodOutstandingMKD: 0,
-        totalCodOutstandingEUR: 0,
-        totalCardOutstandingMKD: 0,
-        totalCardOutstandingEUR: 0,
-        totalSellersWithOutstanding: 0,
-        codSellersCount: 0,
-        cardSellersCount: 0,
-      },
-    );
+    const total = allSummaries.length;
+    const paginated = allSummaries.slice(skip, skip + limit);
 
-    // Compute summaries for the current page only (for table display)
-    const summaries = await Promise.all(
-      paginatedUsers.map((user) => computeSellerSummary(user)),
-    );
+    const totals = includeTotals
+      ? allSummaries.reduce(
+          (acc, s) => ({
+            totalCodOutstandingMKD:
+              acc.totalCodOutstandingMKD + (s.codOutstandingMKD || 0),
+            totalCodOutstandingEUR:
+              acc.totalCodOutstandingEUR + (s.codOutstandingEUR || 0),
+            totalCardOutstandingMKD:
+              acc.totalCardOutstandingMKD + (s.cardOutstandingMKD || 0),
+            totalCardOutstandingEUR:
+              acc.totalCardOutstandingEUR + (s.cardOutstandingEUR || 0),
+            totalSellersWithOutstanding:
+              acc.totalSellersWithOutstanding +
+              (s.codOutstanding > 0 || s.cardOutstanding > 0 ? 1 : 0),
+            codSellersCount: acc.codSellersCount + (s.codOutstanding > 0 ? 1 : 0),
+            cardSellersCount:
+              acc.cardSellersCount + (s.cardOutstanding > 0 ? 1 : 0),
+          }),
+          {
+            totalCodOutstandingMKD: 0,
+            totalCodOutstandingEUR: 0,
+            totalCardOutstandingMKD: 0,
+            totalCardOutstandingEUR: 0,
+            totalSellersWithOutstanding: 0,
+            codSellersCount: 0,
+            cardSellersCount: 0,
+          },
+        )
+      : undefined;
 
     return {
-      summaries,
+      summaries: paginated,
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit) || 1,
       },
-      totals: {
-        totalCodOutstandingMKD: totals.totalCodOutstandingMKD,
-        totalCodOutstandingEUR: totals.totalCodOutstandingEUR,
-        totalCardOutstandingMKD: totals.totalCardOutstandingMKD,
-        totalCardOutstandingEUR: totals.totalCardOutstandingEUR,
-        totalSellersWithOutstanding: totals.totalSellersWithOutstanding,
-        codSellersCount: totals.codSellersCount,
-        cardSellersCount: totals.cardSellersCount,
-      },
+      totals: totals
+        ? {
+            totalCodOutstandingMKD: totals.totalCodOutstandingMKD,
+            totalCodOutstandingEUR: totals.totalCodOutstandingEUR,
+            totalCardOutstandingMKD: totals.totalCardOutstandingMKD,
+            totalCardOutstandingEUR: totals.totalCardOutstandingEUR,
+            totalSellersWithOutstanding: totals.totalSellersWithOutstanding,
+            codSellersCount: totals.codSellersCount,
+            cardSellersCount: totals.cardSellersCount,
+          }
+        : undefined,
     };
   }
 

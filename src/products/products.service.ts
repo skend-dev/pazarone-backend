@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { QueryFailedError } from 'typeorm';
 import { Product, ProductStatus } from './entities/product.entity';
 import { ProductVariantAttribute } from './entities/product-variant-attribute.entity';
 import { ProductVariantValue } from './entities/product-variant-value.entity';
@@ -287,7 +288,20 @@ export class ProductsService {
       shippingPriceKosovo: createProductDto.shippingPriceKosovo ?? null,
     });
 
-    const savedProduct = await this.productsRepository.save(product);
+    let savedProduct: Product;
+    try {
+      savedProduct = await this.productsRepository.save(product);
+    } catch (err) {
+      const pg = err instanceof QueryFailedError ? (err as any).driverError ?? err : null;
+      const code = pg?.code ?? (err as any)?.code;
+      const constraint = pg?.constraint ?? (err as any)?.constraint;
+      if (code === '23505' && (constraint === 'UQ_products_sku' || constraint === 'UQ_products_sellerId_sku')) {
+        throw new BadRequestException(
+          'A product with this SKU already exists in your store. Please use a different SKU.',
+        );
+      }
+      throw err;
+    }
 
     // Create variant attributes and values if provided
     if (hasVariants && variantAttributes) {
@@ -831,7 +845,20 @@ export class ProductsService {
     // If a rejected product is updated, it remains unapproved and needs re-review
 
     // Save product first (without variant relations)
-    const updatedProduct = await this.productsRepository.save(product);
+    let updatedProduct: Product;
+    try {
+      updatedProduct = await this.productsRepository.save(product);
+    } catch (err) {
+      const pg = err instanceof QueryFailedError ? (err as any).driverError ?? err : null;
+      const code = pg?.code ?? (err as any)?.code;
+      const constraint = pg?.constraint ?? (err as any)?.constraint;
+      if (code === '23505' && (constraint === 'UQ_products_sku' || constraint === 'UQ_products_sellerId_sku')) {
+        throw new BadRequestException(
+          'A product with this SKU already exists in your store. Please use a different SKU.',
+        );
+      }
+      throw err;
+    }
 
     // Now create/update variants if provided (after product is saved)
     if (variantAttributes && variants) {

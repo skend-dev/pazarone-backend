@@ -45,6 +45,7 @@ import { forwardRef } from '@nestjs/common';
     TypeOrmModule.forFeature([
       User,
       Order,
+      OrderItem,
       Product,
       AffiliateReferral,
       AffiliateCommission,
