@@ -1253,7 +1253,9 @@ export class ProductsService {
 
   /**
    * Get all product sections for the landing page in one go.
-   * Runs 5 queries in parallel so each section has distinct products and intent.
+   * Fetches larger pools per section then deduplicates in priority order
+   * (flashDeals → trending → hotDeals → bestSellers → newArrivals) so no
+   * product appears in more than one section.
    */
   async getLanding(): Promise<{
     flashDeals: Product[];
@@ -1265,35 +1267,27 @@ export class ProductsService {
   }> {
     const [flashRes, trendingRes, hotDealsRes, bestSellersRes, newArrivalsRes] =
       await Promise.all([
-        this.findAllPublic({
-          limit: 4,
-          sortBy: 'popular',
-          onSale: true,
-        }),
-        this.findAllPublic({
-          limit: 8,
-          sortBy: 'popular',
-          // no onSale so trending is different from flash
-        }),
-        this.findAllPublic({
-          limit: 8,
-          sortBy: 'newest',
-          onSale: true,
-        }),
-        this.findAllPublic({
-          limit: 10,
-          sortBy: 'sales',
-        }),
-        this.findAllPublic({
-          limit: 6,
-          sortBy: 'newest',
-        }),
+        this.findAllPublic({ limit: 10, sortBy: 'popular', onSale: true }),
+        this.findAllPublic({ limit: 20, sortBy: 'popular' }),
+        this.findAllPublic({ limit: 20, sortBy: 'newest', onSale: true }),
+        this.findAllPublic({ limit: 25, sortBy: 'sales' }),
+        this.findAllPublic({ limit: 15, sortBy: 'newest' }),
       ]);
 
-    const allDealProducts = [
-      ...flashRes.products,
-      ...hotDealsRes.products,
-    ];
+    const usedIds = new Set<string>();
+    const dedupe = (products: Product[], limit: number): Product[] => {
+      const unique = products.filter((p) => !usedIds.has(p.id)).slice(0, limit);
+      unique.forEach((p) => usedIds.add(p.id));
+      return unique;
+    };
+
+    const flashDeals = dedupe(flashRes.products, 4);
+    const trending = dedupe(trendingRes.products, 8);
+    const hotDeals = dedupe(hotDealsRes.products, 8);
+    const bestSellers = dedupe(bestSellersRes.products, 10);
+    const newArrivals = dedupe(newArrivalsRes.products, 6);
+
+    const allDealProducts = [...flashDeals, ...hotDeals];
     let maxDiscountPercent = 50;
     for (const p of allDealProducts) {
       const percent = this.getDiscountPercent(p);
@@ -1303,11 +1297,11 @@ export class ProductsService {
     }
 
     return {
-      flashDeals: flashRes.products,
-      trending: trendingRes.products,
-      hotDeals: hotDealsRes.products,
-      bestSellers: bestSellersRes.products,
-      newArrivals: newArrivalsRes.products,
+      flashDeals,
+      trending,
+      hotDeals,
+      bestSellers,
+      newArrivals,
       maxDiscountPercent,
     };
   }
