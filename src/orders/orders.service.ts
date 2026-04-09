@@ -34,6 +34,7 @@ import {
   Currency,
   Market,
 } from '../common/currency/currency.service';
+import { getOrderItemFeaturedImageUrl } from './utils/order-item-image.util';
 
 @Injectable()
 export class OrdersService {
@@ -117,8 +118,10 @@ export class OrdersService {
     const queryBuilder = this.ordersRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.customer', 'customer')
+      .leftJoinAndSelect('order.seller', 'seller')
       .leftJoinAndSelect('order.items', 'items')
       .leftJoinAndSelect('items.product', 'product')
+      .leftJoinAndSelect('items.variant', 'variant')
       .where('order.sellerId = :sellerId', { sellerId })
       .skip(skip)
       .take(limit)
@@ -169,7 +172,13 @@ export class OrdersService {
   async findOne(id: string, sellerId: string): Promise<any> {
     const order = await this.ordersRepository.findOne({
       where: { id },
-      relations: ['customer', 'items', 'items.product'],
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
     });
 
     if (!order) {
@@ -180,7 +189,9 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order');
     }
 
-    return this.formatOrder(order);
+    const formatted = this.formatOrder(order);
+    await this.enrichSellerWithStore(formatted, order.sellerId);
+    return formatted;
   }
 
   async updateStatus(
@@ -190,7 +201,13 @@ export class OrdersService {
   ): Promise<any> {
     const order = await this.ordersRepository.findOne({
       where: { id },
-      relations: ['customer', 'items', 'items.product'],
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
     });
 
     if (!order) {
@@ -378,7 +395,19 @@ export class OrdersService {
       );
     }
 
-    return this.formatOrder(updatedOrder);
+    const reloaded = await this.ordersRepository.findOne({
+      where: { id: updatedOrder.id },
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
+    });
+    const formatted = this.formatOrder(reloaded!);
+    await this.enrichSellerWithStore(formatted, reloaded!.sellerId);
+    return formatted;
   }
 
   /**
@@ -390,7 +419,13 @@ export class OrdersService {
   ): Promise<any> {
     const order = await this.ordersRepository.findOne({
       where: { id },
-      relations: ['customer', 'items', 'items.product'],
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
     });
 
     if (!order) {
@@ -526,7 +561,19 @@ export class OrdersService {
       );
     }
 
-    return this.formatOrder(updatedOrder);
+    const reloadedAdmin = await this.ordersRepository.findOne({
+      where: { id: updatedOrder.id },
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
+    });
+    const formattedAdmin = this.formatOrder(reloadedAdmin!);
+    await this.enrichSellerWithStore(formattedAdmin, reloadedAdmin!.sellerId);
+    return formattedAdmin;
   }
 
   // Generate unique order number
@@ -1218,7 +1265,13 @@ export class OrdersService {
   ): Promise<any> {
     const order = await this.ordersRepository.findOne({
       where: { id },
-      relations: ['customer', 'items', 'items.product'],
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
     });
 
     if (!order) {
@@ -1278,7 +1331,19 @@ export class OrdersService {
       }
     }
 
-    return this.formatOrder(cancelledOrder);
+    const reloadedCancel = await this.ordersRepository.findOne({
+      where: { id: cancelledOrder.id },
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
+    });
+    const formattedCancel = this.formatOrder(reloadedCancel!);
+    await this.enrichSellerWithStore(formattedCancel, reloadedCancel!.sellerId);
+    return formattedCancel;
   }
 
   // Return order
@@ -1290,7 +1355,13 @@ export class OrdersService {
   ): Promise<any> {
     const order = await this.ordersRepository.findOne({
       where: { id },
-      relations: ['customer', 'items', 'items.product'],
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
     });
 
     if (!order) {
@@ -1350,7 +1421,19 @@ export class OrdersService {
       }
     }
 
-    return this.formatOrder(returnedOrder);
+    const reloadedReturn = await this.ordersRepository.findOne({
+      where: { id: returnedOrder.id },
+      relations: [
+        'customer',
+        'seller',
+        'items',
+        'items.product',
+        'items.variant',
+      ],
+    });
+    const formattedReturn = this.formatOrder(reloadedReturn!);
+    await this.enrichSellerWithStore(formattedReturn, reloadedReturn!.sellerId);
+    return formattedReturn;
   }
 
   // Search orders (for sellers)
@@ -1365,8 +1448,10 @@ export class OrdersService {
     const queryBuilder = this.ordersRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.customer', 'customer')
+      .leftJoinAndSelect('order.seller', 'seller')
       .leftJoinAndSelect('order.items', 'items')
       .leftJoinAndSelect('items.product', 'product')
+      .leftJoinAndSelect('items.variant', 'variant')
       .where('order.sellerId = :sellerId', { sellerId })
       .andWhere(
         '(order.orderNumber ILIKE :search OR customer.name ILIKE :search OR customer.email ILIKE :search)',
@@ -1607,6 +1692,26 @@ export class OrdersService {
     return this.formatOrder(order);
   }
 
+  private async enrichSellerWithStore(
+    formatted: Record<string, unknown>,
+    sellerId: string,
+  ): Promise<void> {
+    const seller = formatted.seller as
+      | { id: string; name: string; email: string }
+      | null
+      | undefined;
+    if (!seller || !sellerId) return;
+    try {
+      const settings = await this.sellerSettingsService.getSettings(sellerId);
+      (seller as Record<string, unknown>).storeName =
+        settings.store?.name ?? null;
+      (seller as Record<string, unknown>).storeLogo =
+        settings.store?.logo ?? null;
+    } catch {
+      // ignore missing settings
+    }
+  }
+
   private formatOrder(order: Order): any {
     return {
       id: order.id,
@@ -1634,6 +1739,7 @@ export class OrdersService {
         baseCurrency: item.baseCurrency ?? null,
         variantId: item.variantId ?? null,
         variantCombination: item.variantCombination ?? null,
+        productImage: getOrderItemFeaturedImageUrl(item),
       })),
       totalAmount: parseFloat(order.totalAmount.toString()),
       totalAmountBase: order.totalAmountBase != null ? parseFloat(order.totalAmountBase.toString()) : null,
