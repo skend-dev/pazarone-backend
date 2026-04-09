@@ -2,13 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
+import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { AdminQueryDto } from './dto/admin-query.dto';
+import { getOrderItemFeaturedImageUrl } from '../orders/utils/order-item-image.util';
 
 @Injectable()
 export class AdminOrdersService {
   constructor(
     @InjectRepository(Order)
     private ordersRepository: Repository<Order>,
+    @InjectRepository(SellerSettings)
+    private sellerSettingsRepository: Repository<SellerSettings>,
   ) {}
 
   async findAll(
@@ -97,18 +101,25 @@ export class AdminOrdersService {
   async findOne(id: string) {
     const order = await this.ordersRepository.findOne({
       where: { id },
-      relations: ['customer', 'seller', 'items', 'items.product'],
+      relations: ['customer', 'seller', 'items', 'items.product', 'items.variant'],
     });
 
     if (!order) {
       return null;
     }
 
+    const sellerSettings = await this.sellerSettingsRepository.findOne({
+      where: { sellerId: order.sellerId },
+    });
+
     return {
       id: order.id,
       orderNumber: order.orderNumber,
       sellerId: order.sellerId,
       sellerName: order.seller?.name || null,
+      sellerEmail: order.seller?.email ?? null,
+      sellerStoreName: sellerSettings?.storeName ?? null,
+      sellerStoreLogo: sellerSettings?.logo ?? null,
       customerName: order.customer?.name || null,
       customerEmail: order.customer?.email || null,
       customerPhone: order.shippingAddress?.phone || null,
@@ -119,18 +130,32 @@ export class AdminOrdersService {
           ? order.statusExplanation
           : null,
       totalAmount: parseFloat(order.totalAmount.toString()),
+      totalAmountBase:
+        order.totalAmountBase != null
+          ? parseFloat(order.totalAmountBase.toString())
+          : null,
+      buyerCurrency: order.buyerCurrency ?? null,
+      sellerBaseCurrency: order.sellerBaseCurrency ?? null,
+      exchangeRate:
+        order.exchangeRate != null
+          ? parseFloat(order.exchangeRate.toString())
+          : null,
+      paymentMethod: order.paymentMethod ?? null,
       shippingAddress: order.shippingAddress,
       trackingId: order.trackingId,
       referralCode: order.referralCode,
-      items: order.items?.map((item) => ({
-        productName: item.productName,
-        quantity: item.quantity,
-        price: parseFloat(item.price.toString()),
-        basePrice: item.basePrice != null ? parseFloat(item.basePrice.toString()) : null,
-        baseCurrency: item.baseCurrency ?? null,
-        variantId: item.variantId ?? null,
-        variantCombination: item.variantCombination ?? null,
-      })) || [],
+      items:
+        order.items?.map((item) => ({
+          productName: item.productName,
+          quantity: item.quantity,
+          price: parseFloat(item.price.toString()),
+          basePrice:
+            item.basePrice != null ? parseFloat(item.basePrice.toString()) : null,
+          baseCurrency: item.baseCurrency ?? null,
+          variantId: item.variantId ?? null,
+          variantCombination: item.variantCombination ?? null,
+          productImage: getOrderItemFeaturedImageUrl(item),
+        })) || [],
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
     };
