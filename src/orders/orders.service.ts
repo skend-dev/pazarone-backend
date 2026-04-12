@@ -680,10 +680,32 @@ export class OrdersService {
       // Use authenticated customer ID from session (JWT)
       finalCustomerId = customerId;
     } else if (providedCustomerId) {
-      // Legacy: provided in body (e.g. from tests or older clients)
+      // Body customerId (e.g. admin linked account, tests)
       finalCustomerId = providedCustomerId;
+      const linked = await this.usersRepository.findOne({
+        where: { id: providedCustomerId },
+      });
+      if (
+        linked?.userType === UserType.CUSTOMER &&
+        linked.email != null &&
+        linked.email.toLowerCase() === customer.email.toLowerCase()
+      ) {
+        let changed = false;
+        if (linked.name !== customer.name) {
+          linked.name = customer.name;
+          changed = true;
+        }
+        const nextPhone = customer.phone?.trim() || null;
+        if ((linked.phone ?? null) !== nextPhone) {
+          linked.phone = nextPhone;
+          changed = true;
+        }
+        if (changed) {
+          await this.usersRepository.save(linked);
+        }
+      }
     } else {
-      // Guest order - find or create guest user
+      // Guest order - find or create guest user (single `name` field = full name)
       let guestUser = await this.usersRepository.findOne({
         where: { email: customer.email },
       });
@@ -696,10 +718,26 @@ export class OrdersService {
         guestUser = this.usersRepository.create({
           email: customer.email,
           name: customer.name,
+          phone: customer.phone?.trim() || null,
           password: hashedPassword,
           userType: UserType.CUSTOMER, // Guest users are customers
         });
         guestUser = await this.usersRepository.save(guestUser);
+      } else {
+        // Keep profile in sync with latest checkout / admin order (name + phone)
+        let changed = false;
+        if (guestUser.name !== customer.name) {
+          guestUser.name = customer.name;
+          changed = true;
+        }
+        const nextPhone = customer.phone?.trim() || null;
+        if ((guestUser.phone ?? null) !== nextPhone) {
+          guestUser.phone = nextPhone;
+          changed = true;
+        }
+        if (changed) {
+          await this.usersRepository.save(guestUser);
+        }
       }
 
       finalCustomerId = guestUser.id;

@@ -1,4 +1,15 @@
-import { Controller, Get, Param, Query, UseGuards, Put, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+  Put,
+  Body,
+  Post,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -6,10 +17,12 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 import { AdminOrdersService } from './admin-orders.service';
 import { OrdersService } from '../orders/orders.service';
 import { AdminQueryDto } from './dto/admin-query.dto';
+import { AdminCreateOrderDto } from './dto/admin-create-order.dto';
 import { UpdateOrderStatusDto } from '../orders/dto/update-order-status.dto';
 import { OrderStatus } from '../orders/entities/order.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -47,6 +60,23 @@ export class AdminOrdersController {
     },
   ) {
     return this.adminOrdersService.findAll(query);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create order (admin)',
+    description:
+      'Manually create an order (e.g. phone order). Uses guest checkout rules without email verification. Optional customerId must reference an existing customer user.',
+  })
+  @ApiBody({ type: AdminCreateOrderDto })
+  @ApiResponse({ status: 201, description: 'Orders created successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 404, description: 'Customer not found (invalid customerId)' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
+  createOrder(@Body() dto: AdminCreateOrderDto) {
+    return this.adminOrdersService.createOrder(dto);
   }
 
   @Get('statistics')

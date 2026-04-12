@@ -58,6 +58,8 @@ export class PublicProductQueryDto {
       'commission_desc',
       'stock_asc',
       'stock_desc',
+      'rating_desc',
+      'created_at_desc',
     ],
     example: 'trending',
   })
@@ -76,7 +78,9 @@ export class PublicProductQueryDto {
     | 'commission_asc'
     | 'commission_desc'
     | 'stock_asc'
-    | 'stock_desc' = 'trending';
+    | 'stock_desc'
+    | 'rating_desc'
+    | 'created_at_desc' = 'trending';
 
   @ApiPropertyOptional({ 
     description: 'Filter products on sale (true = only products with active sale price, false = only products without sale)', 
