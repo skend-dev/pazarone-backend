@@ -1180,6 +1180,15 @@ export class ProductsService {
       case 'stock_desc':
         queryBuilder.orderBy('product.stock', 'DESC');
         break;
+      case 'rating_desc':
+        queryBuilder
+          .orderBy('product.rating', 'DESC')
+          .addOrderBy('product.reviewsCount', 'DESC')
+          .addOrderBy('product.createdAt', 'DESC');
+        break;
+      case 'created_at_desc':
+        queryBuilder.orderBy('product.createdAt', 'DESC');
+        break;
       default:
         trendOrder();
     }

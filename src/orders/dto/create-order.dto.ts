@@ -6,12 +6,14 @@ import {
   IsUUID,
   ValidateNested,
   Min,
+  MaxLength,
+  MinLength,
   IsInt,
   IsObject,
   IsOptional,
   IsIn,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class OrderItemDto {
@@ -72,18 +74,38 @@ class ShippingAddressDto {
   phone: string;
 }
 
+function normalizeCustomerFullName(value: unknown): string {
+  if (typeof value !== 'string') {
+    return value as string;
+  }
+  return value.trim().replace(/\s+/g, ' ');
+}
+
 class CustomerInfoDto {
-  @ApiProperty({ description: 'Customer name', example: 'John Doe' })
+  @ApiProperty({
+    description:
+      'Customer full name (single field, e.g. first and last). Trimmed and normalized before save.',
+    example: 'John Doe',
+  })
+  @Transform(({ value }) => normalizeCustomerFullName(value))
   @IsString()
   @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(255)
   name: string;
 
   @ApiProperty({ description: 'Customer email', example: 'john@example.com' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsEmail()
   @IsNotEmpty()
   email: string;
 
   @ApiProperty({ description: 'Customer phone', example: '+1234567890' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @IsNotEmpty()
   phone: string;

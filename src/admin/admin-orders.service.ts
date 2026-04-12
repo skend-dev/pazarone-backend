@@ -1,10 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { AdminQueryDto } from './dto/admin-query.dto';
+import { AdminCreateOrderDto } from './dto/admin-create-order.dto';
 import { getOrderItemFeaturedImageUrl } from '../orders/utils/order-item-image.util';
+import { User, UserType } from '../users/entities/user.entity';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class AdminOrdersService {
@@ -13,7 +20,30 @@ export class AdminOrdersService {
     private ordersRepository: Repository<Order>,
     @InjectRepository(SellerSettings)
     private sellerSettingsRepository: Repository<SellerSettings>,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
+    private ordersService: OrdersService,
   ) {}
+
+  async createOrder(dto: AdminCreateOrderDto) {
+    if (dto.customerId) {
+      const user = await this.usersRepository.findOne({
+        where: { id: dto.customerId },
+      });
+      if (!user) {
+        throw new NotFoundException('Customer not found');
+      }
+      if (user.userType !== UserType.CUSTOMER) {
+        throw new BadRequestException(
+          'Linked user must be a customer account',
+        );
+      }
+    }
+    return this.ordersService.create(null, {
+      ...dto,
+      checkoutType: 'guest',
+    });
+  }
 
   async findAll(
     query: AdminQueryDto & {
