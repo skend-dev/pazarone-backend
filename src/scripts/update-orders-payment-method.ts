@@ -19,7 +19,7 @@ async function updateOrdersPaymentMethod() {
     port: parseInt(process.env.DATABASE_PORT || '5432', 10),
     username: process.env.DATABASE_USER || 'postgres',
     password: process.env.DATABASE_PASSWORD,
-    database: process.env.DATABASE_NAME || 'pazaro_db',
+    database: process.env.DATABASE_NAME || 'pazarone_db',
     // No entities needed - using raw SQL queries
     synchronize: false,
   });

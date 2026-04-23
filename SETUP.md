@@ -10,7 +10,7 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_USER=postgres
 DATABASE_PASSWORD=your_password
-DATABASE_NAME=pazaro_db
+DATABASE_NAME=pazarone_db
 
 # JWT Configuration
 JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
@@ -42,12 +42,12 @@ ADMIN_NAME=Super Admin
 ## Database Setup
 
 1. Make sure PostgreSQL is running
-2. Create a database named `pazaro_db` (or your preferred name)
+2. Create a database named `pazarone_db` (or your preferred name)
 
    **Option 1: Using psql command line**
 
    ```bash
-   psql -U postgres -c "CREATE DATABASE pazaro_db;"
+   psql -U postgres -c "CREATE DATABASE pazarone_db;"
    ```
 
    **Option 2: Using SQL script**
@@ -60,7 +60,7 @@ ADMIN_NAME=Super Admin
 
    ```bash
    psql -U postgres
-   CREATE DATABASE pazaro_db;
+   CREATE DATABASE pazarone_db;
    \q
    ```
 
