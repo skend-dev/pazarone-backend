@@ -1315,6 +1315,50 @@ export class ProductsService {
     };
   }
 
+  /**
+   * Returns a wide pool of currently-on-sale, active, approved products for
+   * scoring-based flash deal selection. Only selects the columns needed for
+   * scoring to keep the query lightweight.
+   */
+  async getFlashDealPool(limit = 200): Promise<Product[]> {
+    const now = new Date();
+    return this.productsRepository
+      .createQueryBuilder('product')
+      .select([
+        'product.id',
+        'product.name',
+        'product.price',
+        'product.regularPrice',
+        'product.salePrice',
+        'product.salePriceExpiresAt',
+        'product.images',
+        'product.categoryId',
+        'product.rating',
+        'product.reviewsCount',
+        'product.sales',
+        'product.views',
+        'product.createdAt',
+      ])
+      .leftJoin(
+        SellerSettings,
+        'ss',
+        'ss.sellerId = product.sellerId',
+      )
+      .where('product.status = :status', { status: ProductStatus.ACTIVE })
+      .andWhere('product.approved = :approved', { approved: true })
+      .andWhere('product.stock > 0')
+      .andWhere('product.salePrice IS NOT NULL')
+      .andWhere(
+        '(product.salePriceExpiresAt IS NULL OR product.salePriceExpiresAt > :now)',
+        { now },
+      )
+      .andWhere(
+        '(ss.paymentRestricted IS NULL OR ss.paymentRestricted = false)',
+      )
+      .limit(limit)
+      .getMany();
+  }
+
   async findOnePublic(id: string, incrementView = true): Promise<Product> {
     const product = await this.productsRepository.findOne({
       where: { id, status: ProductStatus.ACTIVE, approved: true },

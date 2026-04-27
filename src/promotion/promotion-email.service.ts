@@ -11,7 +11,6 @@ import { ProductsService } from '../products/products.service';
 import { EmailService } from '../auth/services/email.service';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
 
-const FLASH_DEAL_LIMIT = 8;
 const defaultLocale = 'en';
 
 @Injectable()
@@ -40,20 +39,24 @@ export class PromotionEmailService {
   }
 
   /**
-   * Get users who have opted in to promotional emails:
-   * - Customers: promotionalEmails = true (default true when no prefs row)
-   * - Sellers: notificationsPromotions = true
-   * - Affiliates: all (no preference yet)
+   * Get users who have opted in to promotional emails.
+   * Audience groups are filtered by the platform `promotionEmailTarget*` flags.
    */
-  async getOptedInRecipients(): Promise<User[]> {
-    const [customers, sellers, affiliates] = await Promise.all([
-      this.getOptedInCustomers(),
-      this.getOptedInSellers(),
-      this.getOptedInAffiliates(),
+  async getOptedInRecipients(audience?: {
+    customers: boolean;
+    sellers: boolean;
+    affiliates: boolean;
+  }): Promise<User[]> {
+    const aud = audience ?? { customers: true, sellers: true, affiliates: true };
+
+    const results = await Promise.all([
+      aud.customers ? this.getOptedInCustomers() : [],
+      aud.sellers ? this.getOptedInSellers() : [],
+      aud.affiliates ? this.getOptedInAffiliates() : [],
     ]);
 
     const byId = new Map<string, User>();
-    for (const u of [...customers, ...sellers, ...affiliates]) {
+    for (const u of results.flat()) {
       if (u.email && !byId.has(u.id)) {
         byId.set(u.id, u);
       }
@@ -136,9 +139,19 @@ export class PromotionEmailService {
   }
 
   /**
-   * Get flash deal products: popular + on sale only, limit 8
+   * Get flash deal products using a multi-signal scoring algorithm.
+   *
+   * Signals and weights:
+   *  30% — discount depth     (bigger savings = more compelling)
+   *  25% — rotation freshness (products sent <7 days ago are heavily penalised)
+   *  20% — urgency            (sale expiring soon scores higher)
+   *  15% — quality            (rating × √reviewCount, normalised)
+   *  10% — popularity         (log-normalised sales + views)
+   *
+   * After scoring, category diversity is enforced: at most 2 products per
+   * category are included in the final selection.
    */
-  async getFlashDealProducts(): Promise<
+  async getFlashDealProducts(limit = 8): Promise<
     Array<{
       id: string;
       name: string;
@@ -148,31 +161,136 @@ export class PromotionEmailService {
       productUrl: string;
     }>
   > {
-    const landing = await this.productsService.getLanding();
-    const formatted: Array<{ id: string; name: string; price: number | null; salePrice: number | null; images: unknown }> =
-      [];
-    for (const p of landing.flashDeals.slice(0, FLASH_DEAL_LIMIT)) {
-      const price =
-        p.regularPrice != null
-          ? Number(p.regularPrice)
-          : p.price != null
-            ? Number(p.price)
-            : null;
-      formatted.push({
+    // 1. Fetch a wide pool of currently-on-sale products
+    const pool = await this.productsService.getFlashDealPool(200);
+    if (pool.length === 0) return [];
+
+    // 2. Load recently featured product IDs from past automated flash-deal broadcasts
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const recentBroadcasts = await this.broadcastRepository
+      .createQueryBuilder('b')
+      .select(['b.featuredProductIds', 'b.createdAt'])
+      .where('b.broadcastType = :type', { type: 'automated_flash_deals' })
+      .andWhere('b.createdAt >= :since', { since: thirtyDaysAgo })
+      .orderBy('b.createdAt', 'DESC')
+      .getMany();
+
+    const sentLast7d = new Set<string>();
+    const sentLast30d = new Set<string>();
+    for (const broadcast of recentBroadcasts) {
+      const ids: string[] = broadcast.featuredProductIds ?? [];
+      const isRecent = broadcast.createdAt >= sevenDaysAgo;
+      for (const id of ids) {
+        sentLast30d.add(id);
+        if (isRecent) sentLast7d.add(id);
+      }
+    }
+
+    // 3. Compute normalisation base for popularity (log scale)
+    const maxPopRaw = pool.reduce((max, p) => {
+      const raw = (p.sales ?? 0) * 2 + (p.views ?? 0);
+      return raw > max ? raw : max;
+    }, 1);
+
+    // 4. Compute per-product quality normalisation base
+    const maxQualityRaw = pool.reduce((max, p) => {
+      const rating = p.rating != null ? Number(p.rating) : 0;
+      const reviews = p.reviewsCount ?? 0;
+      const raw = rating > 0 ? (rating / 5) * Math.sqrt(reviews) : 0;
+      return raw > max ? raw : max;
+    }, 0.001);
+
+    // 5. Score every product in the pool
+    const now = Date.now();
+    const scored = pool.map((p) => {
+      const regularPrice =
+        p.regularPrice != null ? Number(p.regularPrice) : Number(p.price);
+      const salePrice = p.salePrice != null ? Number(p.salePrice) : null;
+
+      // Discount depth (0–1)
+      const discountScore =
+        salePrice != null && regularPrice > 0 && salePrice < regularPrice
+          ? Math.min((regularPrice - salePrice) / regularPrice, 1)
+          : 0;
+
+      // Rotation freshness (0–1): penalise recently sent products
+      const rotationScore = sentLast7d.has(p.id)
+        ? 0.05
+        : sentLast30d.has(p.id)
+          ? 0.40
+          : 1.0;
+
+      // Urgency (0–1): sale expiring soon is more compelling
+      let urgencyScore = 0.30; // on sale with no expiry = moderate urgency
+      if (p.salePriceExpiresAt) {
+        const hoursLeft =
+          (new Date(p.salePriceExpiresAt).getTime() - now) / (1000 * 3600);
+        if (hoursLeft <= 24) urgencyScore = 1.0;
+        else if (hoursLeft <= 72) urgencyScore = 0.80;
+        else if (hoursLeft <= 168) urgencyScore = 0.60;
+        else urgencyScore = 0.40;
+      }
+
+      // Quality (0–1): rating × √reviewCount, normalised to pool max
+      const rating = p.rating != null ? Number(p.rating) : 0;
+      const reviews = p.reviewsCount ?? 0;
+      const qualityRaw = rating > 0 ? (rating / 5) * Math.sqrt(reviews) : 0;
+      const qualityScore = qualityRaw / maxQualityRaw;
+
+      // Popularity (0–1): log-normalised sales + views
+      const popRaw = (p.sales ?? 0) * 2 + (p.views ?? 0);
+      const popularityScore =
+        Math.log(popRaw + 1) / Math.log(maxPopRaw + 1);
+
+      const finalScore =
+        0.30 * discountScore +
+        0.25 * rotationScore +
+        0.20 * urgencyScore +
+        0.15 * qualityScore +
+        0.10 * popularityScore;
+
+      return { p, finalScore };
+    });
+
+    // 6. Sort by score descending
+    scored.sort((a, b) => b.finalScore - a.finalScore);
+
+    // 7. Category-diversity pass: allow at most 2 products per category
+    const categoryCounts = new Map<string | null, number>();
+    const selected: typeof pool = [];
+    for (const { p } of scored) {
+      const catId = p.categoryId ?? null;
+      const count = categoryCounts.get(catId) ?? 0;
+      if (count < 2) {
+        selected.push(p);
+        categoryCounts.set(catId, count + 1);
+        if (selected.length >= limit) break;
+      }
+    }
+
+    // 8. Format for email
+    return this.formatProducts(
+      selected.map((p) => ({
         id: p.id,
         name: p.name,
-        price,
+        price:
+          p.regularPrice != null
+            ? Number(p.regularPrice)
+            : p.price != null
+              ? Number(p.price)
+              : null,
         salePrice: p.salePrice != null ? Number(p.salePrice) : null,
         images: p.images,
-      });
-    }
-    return this.formatProducts(formatted);
+      })),
+    );
   }
 
   /**
-   * Get new arrival products: newest products (no sale filter), limit 8
+   * Get new arrival products: newest products (no sale filter)
    */
-  async getNewArrivalProducts(): Promise<
+  async getNewArrivalProducts(limit = 8): Promise<
     Array<{
       id: string;
       name: string;
@@ -185,7 +303,7 @@ export class PromotionEmailService {
     const landing = await this.productsService.getLanding();
     const formatted: Array<{ id: string; name: string; price: number | null; salePrice: number | null; images: unknown }> =
       [];
-    for (const p of landing.newArrivals.slice(0, FLASH_DEAL_LIMIT)) {
+    for (const p of landing.newArrivals.slice(0, limit)) {
       const price =
         p.regularPrice != null
           ? Number(p.regularPrice)
@@ -221,19 +339,18 @@ export class PromotionEmailService {
   }
 
   /**
-   * Send flash deal emails (popular products on sale) to all opted-in recipients.
+   * Send flash deal emails (popular products on sale) to opted-in recipients.
    */
-  async sendFlashDealEmails(): Promise<{
-    sent: number;
-    skipped: boolean;
-    reason?: string;
-  }> {
-    const products = await this.getFlashDealProducts();
+  async sendFlashDealEmails(opts: {
+    maxProducts: number;
+    audience: { customers: boolean; sellers: boolean; affiliates: boolean };
+  }): Promise<{ sent: number; skipped: boolean; reason?: string }> {
+    const products = await this.getFlashDealProducts(opts.maxProducts);
     if (products.length === 0) {
       return { sent: 0, skipped: true, reason: 'No products on sale' };
     }
 
-    const recipients = await this.getOptedInRecipients();
+    const recipients = await this.getOptedInRecipients(opts.audience);
     if (recipients.length === 0) {
       return { sent: 0, skipped: true, reason: 'No opted-in recipients' };
     }
@@ -244,12 +361,17 @@ export class PromotionEmailService {
 
     const emailSent = await this.sendPromotionEmails(recipients, products, title, message);
 
+    const targetAudience: string[] = [
+      ...(opts.audience.customers ? ['customer'] : []),
+      ...(opts.audience.sellers ? ['seller'] : []),
+      ...(opts.audience.affiliates ? ['affiliate'] : []),
+    ];
     await this.broadcastRepository.save(
       this.broadcastRepository.create({
         title,
         message,
         broadcastType: 'automated_flash_deals',
-        targetAudience: ['customer', 'seller', 'affiliate'],
+        targetAudience,
         deliveryMethod: 'email',
         featuredProductIds: products.map((p) => p.id),
         emailSent,
@@ -259,42 +381,43 @@ export class PromotionEmailService {
       }),
     );
 
-    this.logger.log(
-      `Flash deal emails sent: ${emailSent} to opted-in recipients`,
-    );
+    this.logger.log(`Flash deal emails sent: ${emailSent} to opted-in recipients`);
     return { sent: emailSent, skipped: false };
   }
 
   /**
-   * Send new arrivals emails (newest products) to all opted-in recipients.
+   * Send new arrivals emails (newest products) to opted-in recipients.
    */
-  async sendNewArrivalEmails(): Promise<{
-    sent: number;
-    skipped: boolean;
-    reason?: string;
-  }> {
-    const products = await this.getNewArrivalProducts();
+  async sendNewArrivalEmails(opts: {
+    maxProducts: number;
+    audience: { customers: boolean; sellers: boolean; affiliates: boolean };
+  }): Promise<{ sent: number; skipped: boolean; reason?: string }> {
+    const products = await this.getNewArrivalProducts(opts.maxProducts);
     if (products.length === 0) {
       return { sent: 0, skipped: true, reason: 'No new products' };
     }
 
-    const recipients = await this.getOptedInRecipients();
+    const recipients = await this.getOptedInRecipients(opts.audience);
     if (recipients.length === 0) {
       return { sent: 0, skipped: true, reason: 'No opted-in recipients' };
     }
 
     const title = `New Arrivals - ${products.length} fresh products | PazarOne`;
-    const message =
-      "Discover what's new on PazarOne. Fresh products just for you!";
+    const message = "Discover what's new on PazarOne. Fresh products just for you!";
 
     const emailSent = await this.sendPromotionEmails(recipients, products, title, message);
 
+    const targetAudience: string[] = [
+      ...(opts.audience.customers ? ['customer'] : []),
+      ...(opts.audience.sellers ? ['seller'] : []),
+      ...(opts.audience.affiliates ? ['affiliate'] : []),
+    ];
     await this.broadcastRepository.save(
       this.broadcastRepository.create({
         title,
         message,
         broadcastType: 'automated_new_arrivals',
-        targetAudience: ['customer', 'seller', 'affiliate'],
+        targetAudience,
         deliveryMethod: 'email',
         featuredProductIds: products.map((p) => p.id),
         emailSent,
@@ -304,9 +427,7 @@ export class PromotionEmailService {
       }),
     );
 
-    this.logger.log(
-      `New arrival emails sent: ${emailSent} to opted-in recipients`,
-    );
+    this.logger.log(`New arrival emails sent: ${emailSent} to opted-in recipients`);
     return { sent: emailSent, skipped: false };
   }
 
@@ -374,14 +495,21 @@ export class PromotionEmailService {
       };
     }
 
-    const flashEnabled = await this.platformSettingsService.getPromotionEmailsFlashDealsEnabled();
-    const newArrivalsEnabled = await this.platformSettingsService.getPromotionEmailsNewArrivalsEnabled();
+    const [flashEnabled, newArrivalsEnabled, maxProducts, audience] =
+      await Promise.all([
+        this.platformSettingsService.getPromotionEmailsFlashDealsEnabled(),
+        this.platformSettingsService.getPromotionEmailsNewArrivalsEnabled(),
+        this.platformSettingsService.getPromotionEmailMaxProducts(),
+        this.platformSettingsService.getPromotionEmailAudience(),
+      ]);
+
+    const opts = { maxProducts, audience };
 
     const flashResult = flashEnabled
-      ? await this.sendFlashDealEmails()
+      ? await this.sendFlashDealEmails(opts)
       : { sent: 0, skipped: true, reason: 'Flash deals disabled' };
     const newArrivalsResult = newArrivalsEnabled
-      ? await this.sendNewArrivalEmails()
+      ? await this.sendNewArrivalEmails(opts)
       : { sent: 0, skipped: true, reason: 'New arrivals disabled' };
 
     return { flashDeals: flashResult, newArrivals: newArrivalsResult };

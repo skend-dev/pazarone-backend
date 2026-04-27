@@ -20,17 +20,17 @@ export class PromotionSchedulerService {
   ) {}
 
   /**
-   * Runs daily at 9:00 AM (Europe/Skopje). Only sends emails if schedule matches:
-   * - daily: always runs
-   * - weekly: runs only on the configured day of week (0=Sun, 1=Mon, ..., 6=Sat)
-   * Uses PostgreSQL advisory lock so only one instance runs when multiple replicas are deployed.
+   * Runs every hour (Europe/Skopje). Sends emails only when the current hour
+   * matches the admin-configured `promotionEmailSendHour` and, for weekly
+   * schedules, only on the configured day of week.
+   * Uses a PostgreSQL advisory lock so only one replica runs the job.
    */
-  @Cron('0 9 * * *', {
+  @Cron('0 * * * *', {
     name: 'promotion-emails',
     timeZone: 'Europe/Skopje',
   })
   async handleScheduledPromotionEmails() {
-    this.logger.log('Running scheduled promotion emails...');
+    this.logger.log('Running scheduled promotion emails check...');
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
 
@@ -49,17 +49,44 @@ export class PromotionSchedulerService {
       }
 
       try {
-        const { schedule, dayOfWeek } =
+        const { schedule, dayOfWeek, scheduleSlots } =
           await this.platformSettingsService.getPromotionEmailSchedule();
+        const sendHour =
+          await this.platformSettingsService.getPromotionEmailSendHour();
 
         const now = new Date();
-        const today = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+        const currentHour = now.getHours(); // Europe/Skopje (cron TZ)
+        const today = now.getDay();
 
-        if (schedule === 'weekly' && today !== dayOfWeek) {
-          this.logger.log(
-            `Promotion emails skipped: weekly schedule (runs on day ${dayOfWeek}, today is ${today})`,
+        if (schedule === 'custom') {
+          // Each slot has its own hour — match both day AND hour
+          if (scheduleSlots.length === 0) {
+            this.logger.log('Promotion emails skipped: custom schedule has no slots configured');
+            return;
+          }
+          const matched = scheduleSlots.some(
+            (s) => s.day === today && s.hour === currentHour,
           );
-          return;
+          if (!matched) {
+            this.logger.debug(
+              `Promotion emails skipped: no custom slot matches day=${today} hour=${currentHour}`,
+            );
+            return;
+          }
+        } else {
+          // Daily / weekly: use the single global send hour
+          if (currentHour !== sendHour) {
+            this.logger.debug(
+              `Promotion emails skipped: configured hour is ${sendHour}, current hour is ${currentHour}`,
+            );
+            return;
+          }
+          if (schedule === 'weekly' && today !== dayOfWeek) {
+            this.logger.log(
+              `Promotion emails skipped: weekly schedule (runs on day ${dayOfWeek}, today is ${today})`,
+            );
+            return;
+          }
         }
 
         const result =

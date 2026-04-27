@@ -40,6 +40,17 @@ export class Broadcast {
   @Column('int', { default: 0 })
   notificationsCreated: number;
 
+  @Column('int', { default: 0 })
+  totalRecipients: number;
+
+  /**
+   * 'processing' while the background job is running,
+   * 'done' when completed, 'failed' on unrecoverable error.
+   * Defaults to 'done' so legacy rows remain unchanged.
+   */
+  @Column({ type: 'varchar', length: 20, default: 'done' })
+  status: 'processing' | 'done' | 'failed';
+
   @Column({ default: false })
   isAutomated: boolean; // true = sent by scheduler (flash deals), false = manual admin broadcast
 

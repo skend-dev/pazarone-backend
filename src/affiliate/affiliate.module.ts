@@ -1,6 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AffiliateService } from './affiliate.service';
 import { AffiliateCommunicationsService } from './affiliate-communications.service';
 import { AffiliateCommunicationsSchedulerService } from './affiliate-communications-scheduler.service';
@@ -26,7 +25,6 @@ import { SellerModule } from '../seller/seller.module';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     PlatformModule,
     forwardRef(() => SellerModule),
     forwardRef(() => AuthModule),
