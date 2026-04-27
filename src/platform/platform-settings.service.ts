@@ -32,8 +32,15 @@ export class PlatformSettingsService {
         automaticPromotionEmailsEnabled: false,
         promotionEmailSchedule: 'daily',
         promotionEmailScheduleDayOfWeek: 1,
+        promotionEmailScheduleDays: null,
+        promotionEmailScheduleSlots: null,
         promotionEmailsFlashDealsEnabled: true,
         promotionEmailsNewArrivalsEnabled: true,
+        promotionEmailSendHour: 9,
+        promotionEmailMaxProducts: 8,
+        promotionEmailTargetCustomers: true,
+        promotionEmailTargetSellers: true,
+        promotionEmailTargetAffiliates: true,
       });
       settings = await this.platformSettingsRepository.save(settings);
     }
@@ -69,11 +76,27 @@ export class PlatformSettingsService {
     return settings.automaticPromotionEmailsEnabled === true;
   }
 
-  async getPromotionEmailSchedule(): Promise<{ schedule: 'daily' | 'weekly'; dayOfWeek: number }> {
+  async getPromotionEmailSchedule(): Promise<{
+    schedule: 'daily' | 'weekly' | 'custom';
+    dayOfWeek: number;
+    scheduleSlots: { day: number; hour: number }[];
+  }> {
     const settings = await this.getSettings();
-    const schedule = settings.promotionEmailSchedule === 'weekly' ? 'weekly' : 'daily';
+    const raw = settings.promotionEmailSchedule;
+    const schedule: 'daily' | 'weekly' | 'custom' =
+      raw === 'weekly' ? 'weekly' : raw === 'custom' ? 'custom' : 'daily';
     const dayOfWeek = settings.promotionEmailScheduleDayOfWeek ?? 1;
-    return { schedule, dayOfWeek };
+
+    // Prefer the new slots; fall back to legacy scheduleDays with default hour
+    let scheduleSlots: { day: number; hour: number }[] = [];
+    if (Array.isArray(settings.promotionEmailScheduleSlots) && settings.promotionEmailScheduleSlots.length > 0) {
+      scheduleSlots = settings.promotionEmailScheduleSlots;
+    } else if (Array.isArray(settings.promotionEmailScheduleDays) && settings.promotionEmailScheduleDays.length > 0) {
+      const defaultHour = settings.promotionEmailSendHour ?? 9;
+      scheduleSlots = settings.promotionEmailScheduleDays.map((day) => ({ day, hour: defaultHour }));
+    }
+
+    return { schedule, dayOfWeek, scheduleSlots };
   }
 
   async getPromotionEmailsFlashDealsEnabled(): Promise<boolean> {
@@ -84,6 +107,30 @@ export class PlatformSettingsService {
   async getPromotionEmailsNewArrivalsEnabled(): Promise<boolean> {
     const settings = await this.getSettings();
     return settings.promotionEmailsNewArrivalsEnabled !== false;
+  }
+
+  async getPromotionEmailSendHour(): Promise<number> {
+    const settings = await this.getSettings();
+    return settings.promotionEmailSendHour ?? 9;
+  }
+
+  async getPromotionEmailMaxProducts(): Promise<number> {
+    const settings = await this.getSettings();
+    const val = settings.promotionEmailMaxProducts ?? 8;
+    return Math.max(1, Math.min(20, val));
+  }
+
+  async getPromotionEmailAudience(): Promise<{
+    customers: boolean;
+    sellers: boolean;
+    affiliates: boolean;
+  }> {
+    const settings = await this.getSettings();
+    return {
+      customers: settings.promotionEmailTargetCustomers !== false,
+      sellers: settings.promotionEmailTargetSellers !== false,
+      affiliates: settings.promotionEmailTargetAffiliates !== false,
+    };
   }
 
   // Update platform settings
@@ -118,12 +165,61 @@ export class PlatformSettingsService {
       settings.promotionEmailScheduleDayOfWeek = updates.promotionEmailScheduleDayOfWeek;
     }
 
+    if (updates.promotionEmailScheduleDays !== undefined) {
+      if (updates.promotionEmailScheduleDays === null) {
+        settings.promotionEmailScheduleDays = null;
+      } else {
+        const valid = [...new Set(updates.promotionEmailScheduleDays)]
+          .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+          .sort((a, b) => a - b);
+        settings.promotionEmailScheduleDays = valid.length > 0 ? valid : null;
+      }
+    }
+
+    if (updates.promotionEmailScheduleSlots !== undefined) {
+      if (updates.promotionEmailScheduleSlots === null || !updates.promotionEmailScheduleSlots?.length) {
+        settings.promotionEmailScheduleSlots = null;
+      } else {
+        // Deduplicate by day (last one wins), validate ranges
+        const byDay = new Map<number, { day: number; hour: number }>();
+        for (const slot of updates.promotionEmailScheduleSlots) {
+          const day = Math.round(slot.day);
+          const hour = Math.round(slot.hour);
+          if (day >= 0 && day <= 6 && hour >= 0 && hour <= 23) {
+            byDay.set(day, { day, hour });
+          }
+        }
+        const sorted = [...byDay.values()].sort((a, b) => a.day - b.day);
+        settings.promotionEmailScheduleSlots = sorted.length > 0 ? sorted : null;
+      }
+    }
+
     if (updates.promotionEmailsFlashDealsEnabled !== undefined) {
       settings.promotionEmailsFlashDealsEnabled = updates.promotionEmailsFlashDealsEnabled;
     }
 
     if (updates.promotionEmailsNewArrivalsEnabled !== undefined) {
       settings.promotionEmailsNewArrivalsEnabled = updates.promotionEmailsNewArrivalsEnabled;
+    }
+
+    if (updates.promotionEmailSendHour !== undefined) {
+      settings.promotionEmailSendHour = Math.max(0, Math.min(23, updates.promotionEmailSendHour));
+    }
+
+    if (updates.promotionEmailMaxProducts !== undefined) {
+      settings.promotionEmailMaxProducts = Math.max(1, Math.min(20, updates.promotionEmailMaxProducts));
+    }
+
+    if (updates.promotionEmailTargetCustomers !== undefined) {
+      settings.promotionEmailTargetCustomers = updates.promotionEmailTargetCustomers;
+    }
+
+    if (updates.promotionEmailTargetSellers !== undefined) {
+      settings.promotionEmailTargetSellers = updates.promotionEmailTargetSellers;
+    }
+
+    if (updates.promotionEmailTargetAffiliates !== undefined) {
+      settings.promotionEmailTargetAffiliates = updates.promotionEmailTargetAffiliates;
     }
 
     if (updates.bankTransferDetails !== undefined) {

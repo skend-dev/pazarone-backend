@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -140,6 +148,32 @@ export class AdminBroadcastController {
     @CurrentUser() user: User,
   ) {
     return this.adminBroadcastService.broadcast(dto, user.id);
+  }
+
+  @Get(':id/progress')
+  @ApiOperation({
+    summary: 'Get broadcast job progress',
+    description:
+      'Returns live sending progress for a broadcast job. While status is "processing" the counters update in real-time; poll every 2–3 s. Admin only.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Progress retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        status: { type: 'string', enum: ['processing', 'done', 'failed'] },
+        emailSent: { type: 'number' },
+        notificationsCreated: { type: 'number' },
+        emailFailed: { type: 'number' },
+        totalRecipients: { type: 'number' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Broadcast not found' })
+  getBroadcastProgress(@Param('id') id: string) {
+    return this.adminBroadcastService.getProgress(id);
   }
 
   @Get('audience-counts')

@@ -33,16 +33,52 @@ export class PlatformSettings {
   automaticPromotionEmailsEnabled: boolean; // Master switch (default: false)
 
   @Column({ type: 'varchar', length: 20, default: 'daily' })
-  promotionEmailSchedule: string; // 'daily' | 'weekly'
+  promotionEmailSchedule: string; // 'daily' | 'weekly' | 'custom'
 
   @Column({ type: 'int', default: 1 })
-  promotionEmailScheduleDayOfWeek: number; // 0=Sunday, 1=Monday, ... 6=Saturday (used when weekly)
+  promotionEmailScheduleDayOfWeek: number; // 0=Sunday … 6=Saturday (used when 'weekly')
+
+  /**
+   * @deprecated Superseded by promotionEmailScheduleSlots.
+   * Kept in DB for backward compatibility but no longer written.
+   */
+  @Column('jsonb', { nullable: true })
+  promotionEmailScheduleDays: number[] | null;
+
+  /**
+   * Per-day slots for schedule = 'custom'.
+   * Each entry has a day (0=Sun … 6=Sat) and an hour (0–23, Europe/Skopje).
+   * e.g. [{day:1,hour:9},{day:3,hour:14}] = Mon 9 AM + Wed 2 PM.
+   * Null when unused (daily / weekly modes).
+   */
+  @Column('jsonb', { nullable: true })
+  promotionEmailScheduleSlots: { day: number; hour: number }[] | null;
 
   @Column({ default: true })
-  promotionEmailsFlashDealsEnabled: boolean; // Send flash deal emails (popular + on sale)
+  promotionEmailsFlashDealsEnabled: boolean;
 
   @Column({ default: true })
-  promotionEmailsNewArrivalsEnabled: boolean; // Send new arrivals emails (newest products)
+  promotionEmailsNewArrivalsEnabled: boolean;
+
+  /** Hour of day (0–23, Europe/Skopje) at which automated emails are sent. Default: 9 */
+  @Column({ type: 'int', default: 9 })
+  promotionEmailSendHour: number;
+
+  /** Max number of products included in each automated email. Default: 8 */
+  @Column({ type: 'int', default: 8 })
+  promotionEmailMaxProducts: number;
+
+  /** Whether automated emails are sent to customers. Default: true */
+  @Column({ default: true })
+  promotionEmailTargetCustomers: boolean;
+
+  /** Whether automated emails are sent to sellers. Default: true */
+  @Column({ default: true })
+  promotionEmailTargetSellers: boolean;
+
+  /** Whether automated emails are sent to affiliates. Default: true */
+  @Column({ default: true })
+  promotionEmailTargetAffiliates: boolean;
 
   // Bank Transfer Details (stored as JSON)
   @Column('jsonb', { nullable: true })

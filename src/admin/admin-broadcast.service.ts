@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -22,7 +28,7 @@ const TARGET_TO_USER_TYPE: Record<TargetAudienceType, UserType> = {
 };
 
 @Injectable()
-export class AdminBroadcastService {
+export class AdminBroadcastService implements OnModuleInit {
   private readonly logger = new Logger(AdminBroadcastService.name);
   private readonly defaultLocale = 'en';
   private readonly frontendUrl: string;
@@ -43,6 +49,33 @@ export class AdminBroadcastService {
   ) {
     this.frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'https://pazarone.co';
+  }
+
+  /**
+   * On startup, any broadcast left in 'processing' from a previous server
+   * instance (crash / restart mid-send) is marked 'failed' so the frontend
+   * never shows a perpetually spinning progress bar.
+   */
+  async onModuleInit() {
+    try {
+      const orphaned = await this.broadcastRepository.count({
+        where: { status: 'processing' },
+      });
+      if (orphaned > 0) {
+        await this.broadcastRepository
+          .createQueryBuilder()
+          .update()
+          .set({ status: 'failed' })
+          .where('"status" = :s', { s: 'processing' })
+          .execute();
+        this.logger.warn(
+          `Marked ${orphaned} orphaned broadcast(s) as failed (server restarted mid-send)`,
+        );
+      }
+    } catch (err) {
+      // Non-fatal: column may not exist yet if migration hasn't run
+      this.logger.warn('Could not clean up orphaned broadcasts on init:', err);
+    }
   }
 
   /**
@@ -209,6 +242,8 @@ export class AdminBroadcastService {
         featuredProductIds: b.featuredProductIds,
         emailSent: b.emailSent,
         notificationsCreated: b.notificationsCreated,
+        totalRecipients: b.totalRecipients ?? 0,
+        status: b.status ?? 'done',
         isAutomated: b.isAutomated ?? false,
         createdAt: b.createdAt.toISOString(),
         createdBy: b.createdBy
@@ -263,21 +298,129 @@ export class AdminBroadcastService {
     // general_announcement: any combination allowed
   }
 
+  // ─── In-memory progress tracker ────────────────────────────────────────────
+  // Keyed by broadcast ID. Removed once the job finishes and DB is updated.
+  private readonly broadcastJobs = new Map<
+    string,
+    {
+      emailSent: number;
+      notificationsCreated: number;
+      emailFailed: number;
+      totalRecipients: number;
+      status: 'processing' | 'done' | 'failed';
+    }
+  >();
+
   /**
-   * Send broadcast: resolve recipients, create notifications, send emails, persist record
+   * Start a broadcast job: saves the record immediately and processes
+   * recipients in the background so the HTTP request returns at once.
    */
   async broadcast(
     dto: CreateBroadcastDto,
     createdById: string,
   ): Promise<{
-    success: boolean;
-    emailSent: number;
-    notificationsCreated: number;
+    broadcastId: string;
+    status: string;
+    totalRecipients: number;
     message: string;
   }> {
     this.validateBroadcastPayload(dto);
 
     const recipients = await this.getRecipients(dto.targetAudience);
+    const totalRecipients = recipients.length;
+
+    // Save the record immediately so we have an ID to return
+    const record = await this.broadcastRepository.save(
+      this.broadcastRepository.create({
+        title: dto.title,
+        message: dto.message,
+        broadcastType: dto.broadcastType,
+        targetAudience: dto.targetAudience,
+        deliveryMethod: dto.deliveryMethod,
+        featuredProductIds: dto.featuredProductIds ?? null,
+        emailSent: 0,
+        notificationsCreated: 0,
+        totalRecipients,
+        isAutomated: false,
+        status: 'processing',
+        createdById,
+      }),
+    );
+
+    // Register in-memory tracker
+    this.broadcastJobs.set(record.id, {
+      emailSent: 0,
+      notificationsCreated: 0,
+      emailFailed: 0,
+      totalRecipients,
+      status: 'processing',
+    });
+
+    // Fire-and-forget: runs after the HTTP response is sent
+    this.runBroadcastJob(record.id, dto, recipients).catch((err) => {
+      this.logger.error(`Broadcast job ${record.id} crashed:`, err);
+    });
+
+    return {
+      broadcastId: record.id,
+      status: 'processing',
+      totalRecipients,
+      message: 'Broadcast started — sending in the background',
+    };
+  }
+
+  /**
+   * Return live progress for a broadcast job.
+   * Reads from in-memory tracker while processing, falls back to DB when done.
+   */
+  async getProgress(id: string): Promise<{
+    id: string;
+    status: string;
+    emailSent: number;
+    notificationsCreated: number;
+    emailFailed: number;
+    totalRecipients: number;
+  }> {
+    const job = this.broadcastJobs.get(id);
+    if (job) {
+      return { id, ...job };
+    }
+
+    const record = await this.broadcastRepository.findOne({ where: { id } });
+    if (!record) throw new NotFoundException('Broadcast not found');
+
+    // If the DB still says 'processing' but the in-memory tracker is gone,
+    // the server restarted mid-send — recover the row immediately.
+    if (record.status === 'processing') {
+      await this.broadcastRepository.update(id, { status: 'failed' });
+      record.status = 'failed';
+      this.logger.warn(
+        `Broadcast ${id} was stuck in 'processing' — marked as failed (server restarted)`,
+      );
+    }
+
+    return {
+      id: record.id,
+      status: record.status ?? 'done',
+      emailSent: record.emailSent,
+      notificationsCreated: record.notificationsCreated,
+      emailFailed: 0,
+      totalRecipients: record.totalRecipients,
+    };
+  }
+
+  /**
+   * Background worker: loops through recipients, sends email/notification,
+   * updates the in-memory counter, and flushes to DB periodically.
+   */
+  private async runBroadcastJob(
+    broadcastId: string,
+    dto: CreateBroadcastDto,
+    recipients: User[],
+  ): Promise<void> {
+    const job = this.broadcastJobs.get(broadcastId);
+    if (!job) return;
+
     const sendNotification =
       dto.deliveryMethod === 'notification' || dto.deliveryMethod === 'both';
     const sendEmail =
@@ -294,95 +437,111 @@ export class AdminBroadcastService {
         ? this.buildProductUrl(featuredProducts[0].id, null)
         : null;
 
-    let notificationsCreated = 0;
-    let emailSent = 0;
+    const DB_FLUSH_EVERY = 25; // persist progress to DB every N recipients
 
-    for (const user of recipients) {
-      if (sendNotification) {
-        try {
-          const metadata: Record<string, unknown> = {};
-          if (dto.featuredProductIds?.length) {
-            metadata.productIds = dto.featuredProductIds;
+    try {
+      for (let i = 0; i < recipients.length; i++) {
+        const user = recipients[i];
+
+        if (sendNotification) {
+          try {
+            const metadata: Record<string, unknown> = {};
+            if (dto.featuredProductIds?.length) {
+              metadata.productIds = dto.featuredProductIds;
+            }
+            const notification = await this.notificationsService.create({
+              userId: user.id,
+              type: NotificationType.SYSTEM_ANNOUNCEMENT,
+              title: dto.title,
+              message: dto.message,
+              metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+              link: firstProductLink ?? undefined,
+            });
+            job.notificationsCreated++;
+            await this.notificationsGateway.sendNotificationToUser(
+              user.id,
+              notification,
+            );
+          } catch (err) {
+            this.logger.warn(
+              `Broadcast ${broadcastId}: notification failed for user ${user.id}:`,
+              err,
+            );
           }
-          const notification = await this.notificationsService.create({
-            userId: user.id,
-            type: NotificationType.SYSTEM_ANNOUNCEMENT,
-            title: dto.title,
-            message: dto.message,
-            metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-            link: firstProductLink ?? undefined,
+        }
+
+        if (sendEmail && user.email) {
+          try {
+            const useReferralCode =
+              dto.broadcastType === 'promote_products_affiliates' &&
+              user.userType === UserType.AFFILIATE;
+            const referralCode = useReferralCode
+              ? await this.getReferralCodeForAffiliate(user.id)
+              : null;
+            const productPayload =
+              featuredProducts.length > 0
+                ? featuredProducts.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    price: p.price,
+                    salePrice: p.salePrice,
+                    imageUrl: p.imageUrl,
+                    productUrl: this.buildProductUrl(p.id, referralCode),
+                  }))
+                : undefined;
+            await this.emailService.sendBroadcastAnnouncement(
+              user.email,
+              user.name || 'there',
+              dto.title,
+              dto.message,
+              productPayload,
+            );
+            job.emailSent++;
+          } catch (err) {
+            job.emailFailed++;
+            this.logger.warn(
+              `Broadcast ${broadcastId}: email failed for ${user.email}:`,
+              err,
+            );
+          }
+        }
+
+        // Flush intermediate progress to DB periodically
+        if ((i + 1) % DB_FLUSH_EVERY === 0) {
+          await this.broadcastRepository.update(broadcastId, {
+            emailSent: job.emailSent,
+            notificationsCreated: job.notificationsCreated,
           });
-          notificationsCreated++;
-          await this.notificationsGateway.sendNotificationToUser(
-            user.id,
-            notification,
-          );
-        } catch (err) {
-          this.logger.warn(
-            `Failed to create/send notification for user ${user.id}:`,
-            err,
-          );
         }
       }
 
-      if (sendEmail && user.email) {
-        try {
-          // Only add referral code for promote_products_affiliates type; others use standard links
-          const useReferralCode =
-            dto.broadcastType === 'promote_products_affiliates' &&
-            user.userType === UserType.AFFILIATE;
-          const referralCode = useReferralCode
-            ? await this.getReferralCodeForAffiliate(user.id)
-            : null;
-          const productPayload =
-            featuredProducts.length > 0
-              ? featuredProducts.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                  price: p.price,
-                  salePrice: p.salePrice,
-                  imageUrl: p.imageUrl,
-                  productUrl: this.buildProductUrl(p.id, referralCode),
-                }))
-              : undefined;
-          await this.emailService.sendBroadcastAnnouncement(
-            user.email,
-            user.name || 'there',
-            dto.title,
-            dto.message,
-            productPayload,
-          );
-          emailSent++;
-        } catch (err) {
-          this.logger.warn(
-            `Failed to send broadcast email to ${user.email}:`,
-            err,
-          );
-        }
-      }
+      // Mark done
+      job.status = 'done';
+      await this.broadcastRepository.update(broadcastId, {
+        emailSent: job.emailSent,
+        notificationsCreated: job.notificationsCreated,
+        status: 'done',
+      });
+
+      this.logger.log(
+        `Broadcast ${broadcastId} done: ${job.emailSent} emails sent, ${job.notificationsCreated} notifications created, ${job.emailFailed} failed`,
+      );
+    } catch (err) {
+      job.status = 'failed';
+      await this.broadcastRepository
+        .update(broadcastId, {
+          emailSent: job.emailSent,
+          notificationsCreated: job.notificationsCreated,
+          status: 'failed',
+        })
+        .catch(() => {});
+      throw err;
+    } finally {
+      // Clean up in-memory tracker after a short delay so the last poll
+      // that reads "done" still finds the entry
+      setTimeout(() => {
+        this.broadcastJobs.delete(broadcastId);
+      }, 30_000);
     }
-
-    // Persist broadcast record for history and duplicate support
-    await this.broadcastRepository.save(
-      this.broadcastRepository.create({
-        title: dto.title,
-        message: dto.message,
-        broadcastType: dto.broadcastType,
-        targetAudience: dto.targetAudience,
-        deliveryMethod: dto.deliveryMethod,
-        featuredProductIds: dto.featuredProductIds ?? null,
-        emailSent,
-        notificationsCreated,
-        isAutomated: false,
-        createdById,
-      }),
-    );
-
-    return {
-      success: true,
-      emailSent,
-      notificationsCreated,
-      message: 'Broadcast sent successfully',
-    };
   }
 }

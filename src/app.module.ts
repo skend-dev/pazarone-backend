@@ -49,6 +49,7 @@ import { Invoice } from './invoice/entities/invoice.entity';
 import { InvoiceItem } from './invoice/entities/invoice-item.entity';
 import { FirebaseAdminModule } from './firebase/firebase-admin.module';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { UserIdentity } from './users/entities/user-identity.entity';
 
 @Module({
@@ -119,6 +120,7 @@ import { UserIdentity } from './users/entities/user-identity.entity';
         limit: 30,
       },
     ]),
+    ScheduleModule.forRoot(),
     FirebaseAdminModule,
     UsersModule,
     AuthModule,

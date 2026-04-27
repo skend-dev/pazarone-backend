@@ -1,6 +1,18 @@
-import { IsNumber, IsOptional, Min, Max, IsObject, IsString, ValidateNested, IsBoolean } from 'class-validator';
+import { IsNumber, IsOptional, Min, Max, IsObject, IsString, ValidateNested, IsBoolean, IsArray, IsInt, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+export class ScheduleSlotDto {
+  @IsInt()
+  @Min(0)
+  @Max(6)
+  day: number; // 0=Sun … 6=Sat
+
+  @IsInt()
+  @Min(0)
+  @Max(23)
+  hour: number; // Europe/Skopje
+}
 
 export class BankTransferDetailsDto {
   @ApiPropertyOptional({
@@ -107,13 +119,13 @@ export class UpdatePlatformSettingsDto {
   automaticPromotionEmailsEnabled?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Promotion email schedule: daily or weekly',
+    description: 'Promotion email schedule: daily, weekly, or custom',
     example: 'daily',
-    enum: ['daily', 'weekly'],
+    enum: ['daily', 'weekly', 'custom'],
   })
   @IsOptional()
   @IsString()
-  promotionEmailSchedule?: 'daily' | 'weekly';
+  promotionEmailSchedule?: 'daily' | 'weekly' | 'custom';
 
   @ApiPropertyOptional({
     description: 'Day of week for weekly schedule (0=Sun, 1=Mon, ..., 6=Sat)',
@@ -126,6 +138,30 @@ export class UpdatePlatformSettingsDto {
   @Min(0)
   @Max(6)
   promotionEmailScheduleDayOfWeek?: number;
+
+  @ApiPropertyOptional({
+    description: 'Days of week for custom schedule, array of ints 0–6 (deprecated, use promotionEmailScheduleSlots)',
+    example: [1, 3, 5],
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  promotionEmailScheduleDays?: number[] | null;
+
+  @ApiPropertyOptional({
+    description: 'Per-day send-time slots for custom schedule. Each slot has a day (0–6) and hour (0–23, Europe/Skopje).',
+    example: [{ day: 1, hour: 9 }, { day: 3, hour: 14 }],
+    type: [ScheduleSlotDto],
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.promotionEmailScheduleSlots !== null)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScheduleSlotDto)
+  promotionEmailScheduleSlots?: ScheduleSlotDto[] | null;
 
   @ApiPropertyOptional({
     description: 'Send flash deal emails (popular products on sale)',
@@ -142,6 +178,45 @@ export class UpdatePlatformSettingsDto {
   @IsOptional()
   @IsBoolean()
   promotionEmailsNewArrivalsEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Hour of day (0–23, Europe/Skopje) to send automated emails',
+    example: 9,
+    minimum: 0,
+    maximum: 23,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(23)
+  promotionEmailSendHour?: number;
+
+  @ApiPropertyOptional({
+    description: 'Max number of products included in each automated email',
+    example: 8,
+    minimum: 1,
+    maximum: 20,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  promotionEmailMaxProducts?: number;
+
+  @ApiPropertyOptional({ description: 'Send automated emails to customers', example: true })
+  @IsOptional()
+  @IsBoolean()
+  promotionEmailTargetCustomers?: boolean;
+
+  @ApiPropertyOptional({ description: 'Send automated emails to sellers', example: true })
+  @IsOptional()
+  @IsBoolean()
+  promotionEmailTargetSellers?: boolean;
+
+  @ApiPropertyOptional({ description: 'Send automated emails to affiliates', example: true })
+  @IsOptional()
+  @IsBoolean()
+  promotionEmailTargetAffiliates?: boolean;
 
   @ApiPropertyOptional({
     description: 'Bank transfer details for invoice payments',

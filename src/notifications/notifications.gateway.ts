@@ -144,16 +144,15 @@ export class NotificationsGateway
    * Send notification to a specific user via WebSocket
    */
   async sendNotificationToUser(userId: string, notification: Notification) {
-    const socketId = this.connectedUsers.get(userId);
-    if (socketId) {
-      this.server.to(socketId).emit('new-notification', notification);
-      this.server.to(`user:${userId}`).emit('new-notification', notification);
+    const room = `user:${userId}`;
+    const hasConnectedSocket = this.connectedUsers.has(userId);
+    if (hasConnectedSocket) {
+      this.server.to(room).emit('new-notification', notification);
 
       // Update unread count
       const unreadCount =
         await this.notificationsService.getUnreadCount(userId);
-      this.server.to(socketId).emit('unread-count', { unreadCount });
-      this.server.to(`user:${userId}`).emit('unread-count', { unreadCount });
+      this.server.to(room).emit('unread-count', { unreadCount });
     }
   }
 
@@ -161,18 +160,15 @@ export class NotificationsGateway
    * Broadcast notification update (e.g., when marked as read)
    */
   async notifyNotificationUpdate(userId: string, notificationId: string) {
-    const socketId = this.connectedUsers.get(userId);
-    if (socketId) {
-      this.server.to(socketId).emit('notification-updated', { notificationId });
-      this.server
-        .to(`user:${userId}`)
-        .emit('notification-updated', { notificationId });
+    const room = `user:${userId}`;
+    const hasConnectedSocket = this.connectedUsers.has(userId);
+    if (hasConnectedSocket) {
+      this.server.to(room).emit('notification-updated', { notificationId });
 
       // Update unread count
       const unreadCount =
         await this.notificationsService.getUnreadCount(userId);
-      this.server.to(socketId).emit('unread-count', { unreadCount });
-      this.server.to(`user:${userId}`).emit('unread-count', { unreadCount });
+      this.server.to(room).emit('unread-count', { unreadCount });
     }
   }
 }
