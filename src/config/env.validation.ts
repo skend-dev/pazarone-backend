@@ -45,7 +45,10 @@ class EnvironmentVariables {
   @IsNotEmpty()
   DATABASE_NAME: string;
 
-  // JWT
+  /** Set to `true` for many hosted Postgres instances (e.g. public Railway / cloud URLs require TLS) */
+  @IsOptional()
+  @IsString()
+  DATABASE_SSL?: string;
   @IsString()
   @IsNotEmpty()
   @MinLength(32, {
@@ -157,6 +160,7 @@ export function validate(config: Record<string, unknown>) {
     'DATABASE_USER',
     'DATABASE_PASSWORD',
     'DATABASE_NAME',
+    'DATABASE_SSL',
     'JWT_SECRET',
     'JWT_REFRESH_SECRET',
     'JWT_EXPIRES_IN',

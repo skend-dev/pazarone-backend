@@ -300,6 +300,6 @@ Content-Type: multipart/form-data
 
 - `npm run deploy` runs **`migration:run:prod`** after `npm run build`. Migrations must be emitted from `src/migrations` to `dist/src/migrations` (see `data-source.ts`).
 - If migrations fail, the deploy **stops** (the app will not start on a mismatched schema).
-- Before releasing, run `npm run build && npm run migration:show:prod` with database env vars matching the target to confirm pending migrations.
+- If migrations fail to connect while the DB panel shows “SSL required”, set **`DATABASE_SSL=true`** in Railway (same for local CLI: `migration:run:prod` uses `data-source.js`).
 - Infobip webhook migrations skip creating tables when they already exist (safe to retry).
 

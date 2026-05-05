@@ -9,6 +9,8 @@ config({ path: resolve(__dirname, '.env') });
 // Check if data-source.js exists in dist (compiled) or if we're in src (source)
 const isCompiled = __filename.endsWith('.js') && __dirname.includes('dist');
 
+const useDatabaseSsl = process.env.DATABASE_SSL === 'true';
+
 export default new DataSource({
   type: 'postgres',
   host: process.env.DATABASE_HOST || 'localhost',
@@ -16,6 +18,7 @@ export default new DataSource({
   username: process.env.DATABASE_USER,
   password: process.env.DATABASE_PASSWORD,
   database: process.env.DATABASE_NAME,
+  ssl: useDatabaseSsl ? { rejectUnauthorized: false } : undefined,
   entities: isCompiled ? ['dist/**/*.entity.js'] : ['src/**/*.entity.ts'],
   /** Nest compiles `src/migrations` → `dist/src/migrations` (must match for Railway / deploy.sh) */
   migrations: isCompiled

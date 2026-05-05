@@ -76,6 +76,10 @@ import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-i
         username: configService.get<string>('DATABASE_USER'),
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME'),
+        ssl:
+          configService.get<string>('DATABASE_SSL') === 'true'
+            ? { rejectUnauthorized: false }
+            : undefined,
         entities: [
           User,
           UserIdentity,
