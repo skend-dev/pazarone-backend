@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { AffiliateService } from '../affiliate/affiliate.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { FirebaseAdminService } from '../firebase/firebase-admin.service';
 import { User, UserType } from '../users/entities/user.entity';
@@ -20,8 +21,10 @@ describe('AuthService', () => {
     phone: null,
     avatarUrl: null,
     password: 'hashed',
+    hasPlatformPassword: true,
     userType: UserType.CUSTOMER,
     market: null,
+    referredByAffiliateId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -47,6 +50,12 @@ describe('AuthService', () => {
         {
           provide: UsersService,
           useValue: mockUsersService,
+        },
+        {
+          provide: AffiliateService,
+          useValue: {
+            getAmbassadorByReferralCode: jest.fn(),
+          },
         },
         {
           provide: JwtService,
@@ -180,6 +189,8 @@ describe('AuthService', () => {
         name: 'New User',
         avatarUrl: null,
         userType: UserType.CUSTOMER,
+        market: null,
+        referredByAffiliateId: null,
       });
       expect(usersService.addIdentity).toHaveBeenCalledWith(
         newUser.id,
@@ -212,6 +223,8 @@ describe('AuthService', () => {
         name: 'Apple User',
         avatarUrl: null,
         userType: UserType.CUSTOMER,
+        market: null,
+        referredByAffiliateId: null,
       });
       expect(usersService.addIdentity).toHaveBeenCalledWith(
         newUser.id,

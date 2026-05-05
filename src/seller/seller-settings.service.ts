@@ -19,6 +19,7 @@ import { UpdateShippingDto } from './dto/update-shipping.dto';
 import { PlatformSettingsService } from '../platform/platform-settings.service';
 import { EmailService } from '../auth/services/email.service';
 import { forwardRef, Inject } from '@nestjs/common';
+import { MarketingContactSyncService } from '../marketing/marketing-contact-sync.service';
 
 @Injectable()
 export class SellerSettingsService {
@@ -32,6 +33,7 @@ export class SellerSettingsService {
     private platformSettingsService: PlatformSettingsService,
     @Inject(forwardRef(() => EmailService))
     private emailService: EmailService,
+    private readonly marketingContactSyncService: MarketingContactSyncService,
   ) {}
 
   async getSettings(sellerId: string) {
@@ -376,6 +378,8 @@ export class SellerSettingsService {
     }
 
     await this.settingsRepository.save(settings);
+
+    await this.marketingContactSyncService.upsertFromUserId(sellerId);
 
     return {
       orders: settings.notificationsOrders,

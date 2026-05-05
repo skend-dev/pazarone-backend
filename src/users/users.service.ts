@@ -15,6 +15,7 @@ import {
   IdentityProvider,
 } from './entities/user-identity.entity';
 import { CreateUserDto } from './dto/create-user.dto';
+import { MarketingContactSyncService } from '../marketing/marketing-contact-sync.service';
 
 export interface CreateOAuthUserOptions {
   email: string | null;
@@ -32,6 +33,7 @@ export class UsersService {
     private usersRepository: Repository<User>,
     @InjectRepository(UserIdentity)
     private identityRepository: Repository<UserIdentity>,
+    private readonly marketingContactSyncService: MarketingContactSyncService,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User> {
@@ -49,7 +51,9 @@ export class UsersService {
       referredByAffiliateId: referredByAffiliateId ?? null,
     });
 
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    await this.marketingContactSyncService.upsertFromUserId(saved.id);
+    return saved;
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -142,7 +146,9 @@ export class UsersService {
       hasPlatformPassword: false,
       referredByAffiliateId: referredByAffiliateId ?? null,
     });
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    await this.marketingContactSyncService.upsertFromUserId(saved.id);
+    return saved;
   }
 
   /**
@@ -153,6 +159,7 @@ export class UsersService {
     updates: { name?: string; avatarUrl?: string | null },
   ): Promise<void> {
     await this.usersRepository.update(userId, updates);
+    await this.marketingContactSyncService.upsertFromUserId(userId);
   }
 
   /**
@@ -210,6 +217,8 @@ export class UsersService {
     if (userType === UserType.SELLER && referredByAffiliateId != null) {
       user.referredByAffiliateId = referredByAffiliateId;
     }
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    await this.marketingContactSyncService.upsertFromUserId(saved.id);
+    return saved;
   }
 }

@@ -295,3 +295,11 @@ Content-Type: multipart/form-data
 
 1. Upload images first using `/api/upload/images`
 2. Use the returned URLs in the `images` array when creating/updating products via `/api/seller/products`
+
+## Production / Railway
+
+- `npm run deploy` runs **`migration:run:prod`** after `npm run build`. Migrations must be emitted from `src/migrations` to `dist/src/migrations` (see `data-source.ts`).
+- If migrations fail, the deploy **stops** (the app will not start on a mismatched schema).
+- Before releasing, run `npm run build && npm run migration:show:prod` with database env vars matching the target to confirm pending migrations.
+- Infobip webhook migrations skip creating tables when they already exist (safe to retry).
+

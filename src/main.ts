@@ -64,6 +64,7 @@ async function bootstrap() {
       'Authorization',
       'X-Requested-With',
       'X-CSRF-Token', // Required for CSRF protection in authenticated requests
+      'X-Infobip-Webhook-Secret',
     ],
     exposedHeaders: [
       'Content-Range',

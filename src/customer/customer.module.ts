@@ -8,6 +8,7 @@ import { User } from '../users/entities/user.entity';
 import { UsersModule } from '../users/users.module';
 import { OrdersModule } from '../orders/orders.module';
 import { AuthModule } from '../auth/auth.module';
+import { MarketingModule } from '../marketing/marketing.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AuthModule } from '../auth/auth.module';
     forwardRef(() => UsersModule),
     forwardRef(() => OrdersModule),
     forwardRef(() => AuthModule),
+    MarketingModule,
   ],
   controllers: [CustomerController],
   providers: [CustomerService],

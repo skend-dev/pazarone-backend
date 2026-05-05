@@ -139,6 +139,11 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   FIREBASE_PRIVATE_KEY: string;
+
+  /** Optional shared secret for Infobip delivery / inbound webhooks */
+  @IsString()
+  @IsOptional()
+  INFOBIP_WEBHOOK_SECRET?: string;
 }
 
 export function validate(config: Record<string, unknown>) {
@@ -172,6 +177,7 @@ export function validate(config: Record<string, unknown>) {
     'FIREBASE_PROJECT_ID',
     'FIREBASE_CLIENT_EMAIL',
     'FIREBASE_PRIVATE_KEY',
+    'INFOBIP_WEBHOOK_SECRET',
   ];
 
   const filteredConfig: Record<string, unknown> = {};

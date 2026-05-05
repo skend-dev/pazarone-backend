@@ -18,12 +18,14 @@ import { User } from '../users/entities/user.entity';
 import { PlatformModule } from '../platform/platform.module';
 import { AuthModule } from '../auth/auth.module';
 import { forwardRef } from '@nestjs/common';
+import { MarketingModule } from '../marketing/marketing.module';
 
 @Module({
   imports: [
     PlatformModule,
     TypeOrmModule.forFeature([SellerSettings, Order, OrderItem, Product, User]),
     forwardRef(() => AuthModule),
+    MarketingModule,
   ],
   controllers: [
     SellerDashboardController,

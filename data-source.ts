@@ -17,7 +17,10 @@ export default new DataSource({
   password: process.env.DATABASE_PASSWORD,
   database: process.env.DATABASE_NAME,
   entities: isCompiled ? ['dist/**/*.entity.js'] : ['src/**/*.entity.ts'],
-  migrations: isCompiled ? ['dist/migrations/*.js'] : ['src/migrations/*.ts'],
+  /** Nest compiles `src/migrations` → `dist/src/migrations` (must match for Railway / deploy.sh) */
+  migrations: isCompiled
+    ? ['dist/src/migrations/*.js']
+    : ['src/migrations/*.ts'],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 });

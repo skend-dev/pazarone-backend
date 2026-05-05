@@ -10,6 +10,7 @@ import { AffiliatePaymentMethod } from '../affiliate/entities/affiliate-payment-
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Broadcast } from './entities/broadcast.entity';
+import { MarketingContact } from '../marketing/entities/marketing-contact.entity';
 import { AdminUsersService } from './admin-users.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminOrdersService } from './admin-orders.service';
@@ -32,12 +33,14 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
 import { OrdersModule } from '../orders/orders.module';
 import { forwardRef } from '@nestjs/common';
+import { MarketingModule } from '../marketing/marketing.module';
 
 @Module({
   imports: [
     PlatformModule,
     SellerModule,
     AffiliateModule,
+    MarketingModule,
     forwardRef(() => OrdersModule),
     forwardRef(() => ProductsModule),
     forwardRef(() => NotificationsModule),
@@ -53,6 +56,7 @@ import { forwardRef } from '@nestjs/common';
       AffiliatePaymentMethod,
       SellerSettings,
       Broadcast,
+      MarketingContact,
     ]),
   ],
   controllers: [

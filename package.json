@@ -25,8 +25,10 @@
     "migration:generate": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:generate -d data-source.ts",
     "migration:create": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:create",
     "migration:run": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:run -d data-source.ts",
+    "migration:run:prod": "typeorm migration:run -d dist/data-source.js",
     "migration:revert": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:revert -d data-source.ts",
-    "migration:show": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:show -d data-source.ts"
+    "migration:show": "ts-node -r tsconfig-paths/register node_modules/.bin/typeorm migration:show -d data-source.ts",
+    "migration:show:prod": "typeorm migration:show -d dist/data-source.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -47,7 +49,9 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "cloudinary": "^2.8.0",
+    "csv-parse": "^6.2.1",
     "firebase-admin": "^13.6.0",
+    "libphonenumber-js": "^1.12.42",
     "multer": "^2.0.2",
     "node-telegram-bot-api": "^0.66.0",
     "passport": "^0.7.0",

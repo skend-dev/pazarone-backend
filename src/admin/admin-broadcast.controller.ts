@@ -150,6 +150,38 @@ export class AdminBroadcastController {
     return this.adminBroadcastService.broadcast(dto, user.id);
   }
 
+  @Get('audience-counts')
+  @ApiOperation({
+    summary: 'Get audience counts',
+    description:
+      'Returns counts of affiliates, sellers, customers, and marketing contacts with email (Audience list) for the broadcast selector. Optional gender narrows customer and Audience-list counts to that gender on file. Admin only.',
+  })
+  @ApiQuery({
+    name: 'gender',
+    required: false,
+    description:
+      'Match against marketing_contacts.gender (customers via linked profile; Audience list rows). Case-insensitive.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Audience counts retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        affiliates: { type: 'number', example: 42 },
+        sellers: { type: 'number', example: 28 },
+        customers: { type: 'number', example: 1250 },
+        marketingAudienceWithEmail: { type: 'number', example: 320 },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
+  getAudienceCounts(@Query('gender') gender?: string) {
+    const g = gender?.trim();
+    return this.adminBroadcastService.getAudienceCounts(g || undefined);
+  }
+
   @Get(':id/progress')
   @ApiOperation({
     summary: 'Get broadcast job progress',
@@ -174,29 +206,5 @@ export class AdminBroadcastController {
   @ApiResponse({ status: 404, description: 'Broadcast not found' })
   getBroadcastProgress(@Param('id') id: string) {
     return this.adminBroadcastService.getProgress(id);
-  }
-
-  @Get('audience-counts')
-  @ApiOperation({
-    summary: 'Get audience counts',
-    description:
-      'Returns counts of affiliates, sellers, and customers for the broadcast audience selector. Admin only.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Audience counts retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        affiliates: { type: 'number', example: 42 },
-        sellers: { type: 'number', example: 28 },
-        customers: { type: 'number', example: 1250 },
-      },
-    },
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
-  getAudienceCounts() {
-    return this.adminBroadcastService.getAudienceCounts();
   }
 }

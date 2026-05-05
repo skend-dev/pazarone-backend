@@ -11,18 +11,21 @@ import { AffiliateModule } from '../affiliate/affiliate.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { EmailVerification } from './entities/email-verification.entity';
 import { PasswordReset } from './entities/password-reset.entity';
-import { EmailService } from './services/email.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { PasswordResetService } from './services/password-reset.service';
 import { UnsubscribeService } from './services/unsubscribe.service';
 import { CustomerNotificationPreferences } from '../customer/entities/customer-notification-preferences.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
+import { MarketingModule } from '../marketing/marketing.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     forwardRef(() => AffiliateModule),
     PassportModule,
+    forwardRef(() => MarketingModule),
+    EmailModule,
     TypeOrmModule.forFeature([
       EmailVerification,
       PasswordReset,
@@ -50,7 +53,6 @@ import { SellerSettings } from '../seller/entities/seller-settings.entity';
   providers: [
     AuthService,
     JwtStrategy,
-    EmailService,
     EmailVerificationService,
     PasswordResetService,
     UnsubscribeService,
@@ -58,8 +60,8 @@ import { SellerSettings } from '../seller/entities/seller-settings.entity';
   exports: [
     AuthService,
     EmailVerificationService,
-    EmailService,
     PasswordResetService,
+    EmailModule,
   ],
 })
 export class AuthModule {}
