@@ -517,7 +517,11 @@ export class AdminBroadcastService implements OnModuleInit {
         'No recipients match this audience and delivery method.',
       );
     }
-    const totalRecipients = jobRecipients.length;
+
+    // Apply optional cap — slice before saving totalRecipients so the record reflects reality
+    const limit = dto.recipientLimit && dto.recipientLimit > 0 ? dto.recipientLimit : null;
+    const finalRecipients = limit ? jobRecipients.slice(0, limit) : jobRecipients;
+    const totalRecipients = finalRecipients.length;
 
     // Save the record immediately so we have an ID to return
     const record = await this.broadcastRepository.save(
@@ -547,7 +551,7 @@ export class AdminBroadcastService implements OnModuleInit {
     });
 
     // Fire-and-forget: runs after the HTTP response is sent
-    this.runBroadcastJob(record.id, dto, jobRecipients).catch((err) => {
+    this.runBroadcastJob(record.id, dto, finalRecipients).catch((err) => {
       this.logger.error(`Broadcast job ${record.id} crashed:`, err);
     });
 

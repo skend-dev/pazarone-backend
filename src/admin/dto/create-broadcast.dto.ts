@@ -9,7 +9,11 @@ import {
   MaxLength,
   IsUUID,
   ArrayMaxSize,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export const TARGET_AUDIENCE = [
@@ -107,4 +111,19 @@ export class CreateBroadcastDto {
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsIn(BROADCAST_AUDIENCE_GENDERS)
   audienceGender?: (typeof BROADCAST_AUDIENCE_GENDERS)[number];
+
+  @ApiPropertyOptional({
+    description:
+      'Max number of recipients to send to. Recipients are taken in the natural order ' +
+      '(users first, then audience contacts). Omit or set to 0 to send to everyone.',
+    minimum: 1,
+    maximum: 100_000,
+    example: 500,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  recipientLimit?: number;
 }
