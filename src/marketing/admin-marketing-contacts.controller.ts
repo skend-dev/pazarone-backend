@@ -174,13 +174,16 @@ export class AdminMarketingContactsController {
   @Post('infobip-people/sync')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Upsert contacts with phone into Infobip People',
+    summary: 'Push contacts to Infobip People (Customer Profiles)',
     description:
-      'Uses Customer Profiles REST (`INFOBIP_PEOPLE_SYNC_ENABLED=true`; `marketing_contact.id` as external person id).',
+      'Pushes contacts with an email or phone to Infobip People. ' +
+      'Skips already-synced contacts unless `forceResync=true`. ' +
+      'Requires `INFOBIP_PEOPLE_SYNC_ENABLED=true`.',
   })
   async syncInfobipPeople(@Body() dto: SyncMarketingContactsInfobipDto) {
     return this.marketingContactService.pushAudienceSliceToInfobipPeople(
       dto.limit ?? 100,
+      dto.forceResync ?? false,
     );
   }
 

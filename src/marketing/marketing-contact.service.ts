@@ -542,29 +542,41 @@ export class MarketingContactService {
     return c ?? null;
   }
 
-  /** Push contacts **with phone** to Infobip People (optional; `INFOBIP_PEOPLE_SYNC_ENABLED=true`). */
-  async pushAudienceSliceToInfobipPeople(limit: number): Promise<{
+  /**
+   * Push contacts to Infobip People (Customer Profiles).
+   *
+   * - Skips contacts where `infobipPeopleSyncedAt IS NOT NULL` unless `forceResync=true`.
+   * - Includes any contact with at least an email **or** a phone number.
+   * - Orders by oldest-synced-first so unsynced contacts are always prioritised.
+   */
+  async pushAudienceSliceToInfobipPeople(
+    limit: number,
+    forceResync = false,
+  ): Promise<{
     enabled: boolean;
     attempted: number;
     succeeded: number;
     failures: Array<{ id: string; error: string }>;
   }> {
     if (!this.infobipPeopleService.isConfigured()) {
-      return {
-        enabled: false,
-        attempted: 0,
-        succeeded: 0,
-        failures: [],
-      };
+      return { enabled: false, attempted: 0, succeeded: 0, failures: [] };
     }
 
     const take = Math.min(Math.max(limit, 1), 500);
-    const rows = await this.marketingContactRepository
+
+    const qb = this.marketingContactRepository
       .createQueryBuilder('c')
       .where(
-        '"c"."phoneE164" IS NOT NULL AND TRIM(COALESCE("c"."phoneE164", \'\')) <> \'\'',
-      )
-      .orderBy('c.updatedAt', 'DESC')
+        '(TRIM(COALESCE(c."phoneE164", \'\')) <> \'\' OR TRIM(COALESCE(c.email, \'\')) <> \'\')',
+      );
+
+    if (!forceResync) {
+      qb.andWhere('c."infobipPeopleSyncedAt" IS NULL');
+    }
+
+    const rows = await qb
+      .orderBy('c."infobipPeopleSyncedAt"', 'ASC', 'NULLS FIRST')
+      .addOrderBy('c."updatedAt"', 'DESC')
       .take(take)
       .getMany();
 

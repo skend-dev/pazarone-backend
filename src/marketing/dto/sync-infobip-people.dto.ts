@@ -1,11 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsInt,
   IsOptional,
   Max,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class SyncMarketingContactsInfobipDto {
   @ApiPropertyOptional({
@@ -13,7 +14,8 @@ export class SyncMarketingContactsInfobipDto {
     maximum: 500,
     default: 100,
     description:
-      'Contacts **with phone** to upsert into Infobip People (`INFOBIP_PEOPLE_SYNC_ENABLED=true`; most recently updated first).',
+      'Max contacts to push in this batch. Only **unsynced** contacts are selected ' +
+      '(those where `infobipPeopleSyncedAt IS NULL`) unless `forceResync=true`.',
   })
   @IsOptional()
   @Type(() => Number)
@@ -21,4 +23,15 @@ export class SyncMarketingContactsInfobipDto {
   @Min(1)
   @Max(500)
   limit?: number;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'When `true`, re-push contacts that were already synced (ignores `infobipPeopleSyncedAt`). ' +
+      'Use to reconcile or refresh existing Infobip profiles.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  forceResync?: boolean;
 }

@@ -147,6 +147,56 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   INFOBIP_WEBHOOK_SECRET?: string;
+
+  /** Infobip People — included so ConfigModule exposes them after validate(); otherwise they are stripped. */
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_SYNC_ENABLED?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_BASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_VIBER_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_VIBER_BASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_UPSERT_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_UPSERT_HTTP_METHOD?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_LIST_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_LIST_PAGE_QUERY?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_LIST_LIMIT_QUERY?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_LIST_PAGE_ZERO_INDEXED?: string;
+
+  @IsString()
+  @IsOptional()
+  INFOBIP_PEOPLE_LIST_TIMEOUT_MS?: string;
 }
 
 export function validate(config: Record<string, unknown>) {
@@ -182,6 +232,18 @@ export function validate(config: Record<string, unknown>) {
     'FIREBASE_CLIENT_EMAIL',
     'FIREBASE_PRIVATE_KEY',
     'INFOBIP_WEBHOOK_SECRET',
+    'INFOBIP_PEOPLE_SYNC_ENABLED',
+    'INFOBIP_PEOPLE_BASE_URL',
+    'INFOBIP_PEOPLE_API_KEY',
+    'INFOBIP_VIBER_API_KEY',
+    'INFOBIP_VIBER_BASE_URL',
+    'INFOBIP_PEOPLE_UPSERT_PATH',
+    'INFOBIP_PEOPLE_UPSERT_HTTP_METHOD',
+    'INFOBIP_PEOPLE_LIST_PATH',
+    'INFOBIP_PEOPLE_LIST_PAGE_QUERY',
+    'INFOBIP_PEOPLE_LIST_LIMIT_QUERY',
+    'INFOBIP_PEOPLE_LIST_PAGE_ZERO_INDEXED',
+    'INFOBIP_PEOPLE_LIST_TIMEOUT_MS',
   ];
 
   const filteredConfig: Record<string, unknown> = {};
