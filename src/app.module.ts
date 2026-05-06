@@ -51,6 +51,10 @@ import { FirebaseAdminModule } from './firebase/firebase-admin.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { UserIdentity } from './users/entities/user-identity.entity';
+import { MarketingModule } from './marketing/marketing.module';
+import { MarketingContact } from './marketing/entities/marketing-contact.entity';
+import { MarketingInfobipDeliveryEvent } from './marketing/entities/marketing-infobip-delivery-event.entity';
+import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-infobip-inbound-message.entity';
 
 @Module({
   imports: [
@@ -72,6 +76,10 @@ import { UserIdentity } from './users/entities/user-identity.entity';
         username: configService.get<string>('DATABASE_USER'),
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME'),
+        ssl:
+          configService.get<string>('DATABASE_SSL') === 'true'
+            ? { rejectUnauthorized: false }
+            : undefined,
         entities: [
           User,
           UserIdentity,
@@ -98,6 +106,9 @@ import { UserIdentity } from './users/entities/user-identity.entity';
           Invoice,
           InvoiceItem,
           Broadcast,
+          MarketingContact,
+          MarketingInfobipDeliveryEvent,
+          MarketingInfobipInboundMessage,
         ],
         synchronize: false, // Always false - use migrations in production
         // Only log errors in development, disable query logging for cleaner output
@@ -136,6 +147,7 @@ import { UserIdentity } from './users/entities/user-identity.entity';
     CustomerModule,
     InvoiceModule,
     PromotionModule,
+    MarketingModule,
   ],
   controllers: [AppController],
   providers: [

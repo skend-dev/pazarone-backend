@@ -11,12 +11,14 @@ import { User, UserType } from '../users/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AdminQueryDto } from './dto/admin-query.dto';
+import { MarketingContactSyncService } from '../marketing/marketing-contact-sync.service';
 
 @Injectable()
 export class AdminUsersService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private readonly marketingContactSyncService: MarketingContactSyncService,
   ) {}
 
   async findAll(query: AdminQueryDto) {
@@ -87,6 +89,7 @@ export class AdminUsersService {
     });
 
     const savedUser = await this.usersRepository.save(user);
+    await this.marketingContactSyncService.upsertFromUserId(savedUser.id);
     return {
       id: savedUser.id,
       email: savedUser.email,
@@ -133,6 +136,7 @@ export class AdminUsersService {
     }
 
     const updatedUser = await this.usersRepository.save(user);
+    await this.marketingContactSyncService.upsertFromUserId(updatedUser.id);
     return {
       id: updatedUser.id,
       email: updatedUser.email,

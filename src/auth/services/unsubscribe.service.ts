@@ -5,6 +5,7 @@ import { UsersService } from '../../users/users.service';
 import { UserType } from '../../users/entities/user.entity';
 import { CustomerNotificationPreferences } from '../../customer/entities/customer-notification-preferences.entity';
 import { SellerSettings } from '../../seller/entities/seller-settings.entity';
+import { MarketingContactSyncService } from '../../marketing/marketing-contact-sync.service';
 
 @Injectable()
 export class UnsubscribeService {
@@ -14,6 +15,7 @@ export class UnsubscribeService {
     private readonly notificationPreferencesRepository: Repository<CustomerNotificationPreferences>,
     @InjectRepository(SellerSettings)
     private readonly sellerSettingsRepository: Repository<SellerSettings>,
+    private readonly marketingContactSyncService: MarketingContactSyncService,
   ) {}
 
   /**
@@ -43,6 +45,7 @@ export class UnsubscribeService {
         prefs.promotionalEmails = false;
       }
       await this.notificationPreferencesRepository.save(prefs);
+      await this.marketingContactSyncService.upsertFromUserId(user.id);
     }
 
     if (user.userType === UserType.SELLER) {
@@ -52,6 +55,7 @@ export class UnsubscribeService {
       if (settings) {
         settings.notificationsPromotions = false;
         await this.sellerSettingsRepository.save(settings);
+        await this.marketingContactSyncService.upsertFromUserId(user.id);
       }
     }
 

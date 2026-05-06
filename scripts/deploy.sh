@@ -1,11 +1,11 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Check if dist/src/main.js exists, if not, build
 if [ ! -f dist/src/main.js ]; then
   echo "🔨 Building application (dist/src/main.js not found)..."
   npm run build
-  
+
   echo "📊 Verifying build output..."
   if [ ! -f dist/src/main.js ]; then
     echo "❌ Error: dist/src/main.js not found after build!"
@@ -19,10 +19,9 @@ else
   echo "✅ Build output already exists (dist/src/main.js found)"
 fi
 
-echo "🔄 Running migrations..."
-npm run migration:run || {
-  echo "⚠️  Warning: Migrations failed or no migrations to run (this is OK if migrations are up to date)"
-}
+# Compiled JS migrations live under dist/src/migrations (see data-source.ts)
+echo "🔄 Running database migrations..."
+npm run migration:run:prod
 
 echo "🚀 Starting application..."
 exec node dist/src/main

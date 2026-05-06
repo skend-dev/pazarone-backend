@@ -4,15 +4,30 @@ import {
   IsArray,
   IsIn,
   IsOptional,
+  ValidateIf,
   ArrayMinSize,
   MaxLength,
   IsUUID,
   ArrayMaxSize,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export const TARGET_AUDIENCE = ['affiliate', 'seller', 'customer'] as const;
+export const TARGET_AUDIENCE = [
+  'affiliate',
+  'seller',
+  'customer',
+  'marketing_audience',
+] as const;
 export type TargetAudienceType = (typeof TARGET_AUDIENCE)[number];
+
+export type UserRoleTargetAudienceType = Exclude<
+  TargetAudienceType,
+  'marketing_audience'
+>;
 
 export const DELIVERY_METHOD = ['email', 'notification', 'both'] as const;
 export type DeliveryMethodType = (typeof DELIVERY_METHOD)[number];
@@ -23,6 +38,8 @@ export const BROADCAST_TYPE = [
   'marketing_products_customers',
 ] as const;
 export type BroadcastType = (typeof BROADCAST_TYPE)[number];
+
+export const BROADCAST_AUDIENCE_GENDERS = ['male', 'female'] as const;
 
 export class CreateBroadcastDto {
   @ApiProperty({
@@ -53,7 +70,8 @@ export class CreateBroadcastDto {
   message: string;
 
   @ApiProperty({
-    description: 'Target audience: affiliate, seller, and/or customer',
+    description:
+      'Target audience: affiliate, seller, customer, and/or marketing_audience (Audience list with email; general announcements only)',
     example: ['affiliate', 'seller', 'customer'],
     enum: TARGET_AUDIENCE,
     isArray: true,
@@ -64,7 +82,8 @@ export class CreateBroadcastDto {
   targetAudience: TargetAudienceType[];
 
   @ApiProperty({
-    description: 'Delivery method: email only, in-app notification only, or both',
+    description:
+      'Delivery method: email only, in-app notification only, or both',
     enum: DELIVERY_METHOD,
   })
   @IsIn(DELIVERY_METHOD)
@@ -81,4 +100,30 @@ export class CreateBroadcastDto {
   @IsUUID('4', { each: true })
   @ArrayMaxSize(10)
   featuredProductIds?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Optional: male or female — narrows Audience list and customer recipients only.',
+    enum: BROADCAST_AUDIENCE_GENDERS,
+    example: 'female',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
+  @IsIn(BROADCAST_AUDIENCE_GENDERS)
+  audienceGender?: (typeof BROADCAST_AUDIENCE_GENDERS)[number];
+
+  @ApiPropertyOptional({
+    description:
+      'Max number of recipients to send to. Recipients are taken in the natural order ' +
+      '(users first, then audience contacts). Omit or set to 0 to send to everyone.',
+    minimum: 1,
+    maximum: 100_000,
+    example: 500,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  recipientLimit?: number;
 }

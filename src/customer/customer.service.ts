@@ -18,6 +18,7 @@ import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { EmailService } from '../auth/services/email.service';
 import { forwardRef, Inject } from '@nestjs/common';
+import { MarketingContactSyncService } from '../marketing/marketing-contact-sync.service';
 
 @Injectable()
 export class CustomerService {
@@ -31,6 +32,7 @@ export class CustomerService {
     private usersService: UsersService,
     @Inject(forwardRef(() => EmailService))
     private emailService: EmailService,
+    private readonly marketingContactSyncService: MarketingContactSyncService,
   ) {}
 
   /**
@@ -62,7 +64,9 @@ export class CustomerService {
       user.phone = updateProfileDto.phone || null;
     }
 
-    return await this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    await this.marketingContactSyncService.upsertFromUserId(saved.id);
+    return saved;
   }
 
   /**
@@ -328,6 +332,8 @@ export class CustomerService {
       }
     }
 
-    return await this.notificationPreferencesRepository.save(preferences);
+    const saved = await this.notificationPreferencesRepository.save(preferences);
+    await this.marketingContactSyncService.upsertFromUserId(customerId);
+    return saved;
   }
 }
