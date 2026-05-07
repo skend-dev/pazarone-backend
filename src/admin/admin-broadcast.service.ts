@@ -604,8 +604,17 @@ export class AdminBroadcastService implements OnModuleInit {
   }
 
   /**
-   * Background worker: loops through recipients, sends email/notification,
-   * updates the in-memory counter, and flushes to DB periodically.
+   * Background worker: sends emails and notifications, then persists final
+   * counts to the DB.
+   *
+   * Email strategies:
+   *   A) promote_products_affiliates — each affiliate gets unique ?ref= URLs,
+   *      so emails are sent individually but 50 at a time (parallel chunks).
+   *   B) all other broadcast types — products are the same for every recipient,
+   *      so we use SendGrid personalizations: up to 1,000 recipients per API
+   *      call (~40 total calls for 40k emails instead of 40,000).
+   *
+   * Notifications are always sent sequentially (fast DB writes, not HTTP).
    */
   private async runBroadcastJob(
     broadcastId: string,
@@ -622,6 +631,8 @@ export class AdminBroadcastService implements OnModuleInit {
       dto.deliveryMethod === 'notification' || dto.deliveryMethod === 'both';
     const sendEmail =
       dto.deliveryMethod === 'email' || dto.deliveryMethod === 'both';
+    const isAffiliatePromo =
+      dto.broadcastType === 'promote_products_affiliates';
 
     let featuredProducts: Awaited<ReturnType<typeof this.getFeaturedProducts>> =
       [];
@@ -634,115 +645,132 @@ export class AdminBroadcastService implements OnModuleInit {
         ? this.buildProductUrl(featuredProducts[0].id, null)
         : null;
 
-    const DB_FLUSH_EVERY = 25; // persist progress to DB every N recipients
-
     try {
-      for (let i = 0; i < recipients.length; i++) {
-        const rec = recipients[i];
-
-        if (rec.kind === 'user') {
+      // ── Notifications (sequential, fast DB writes) ──────────────────────
+      if (sendNotification) {
+        for (const rec of recipients) {
+          if (rec.kind !== 'user') continue;
           const user = rec.user;
-
-          if (sendNotification) {
-            try {
-              const metadata: Record<string, unknown> = {};
-              if (dto.featuredProductIds?.length) {
-                metadata.productIds = dto.featuredProductIds;
-              }
-              const notification = await this.notificationsService.create({
-                userId: user.id,
-                type: NotificationType.SYSTEM_ANNOUNCEMENT,
-                title: dto.title,
-                message: dto.message,
-                metadata:
-                  Object.keys(metadata).length > 0 ? metadata : undefined,
-                link: firstProductLink ?? undefined,
-              });
-              job.notificationsCreated++;
-              await this.notificationsGateway.sendNotificationToUser(
-                user.id,
-                notification,
-              );
-            } catch (err) {
-              this.logger.warn(
-                `Broadcast ${broadcastId}: notification failed for user ${user.id}:`,
-                err,
-              );
+          try {
+            const metadata: Record<string, unknown> = {};
+            if (dto.featuredProductIds?.length) {
+              metadata.productIds = dto.featuredProductIds;
             }
-          }
-
-          if (sendEmail && user.email) {
-            try {
-              const useReferralCode =
-                dto.broadcastType === 'promote_products_affiliates' &&
-                user.userType === UserType.AFFILIATE;
-              const referralCode = useReferralCode
-                ? await this.getReferralCodeForAffiliate(user.id)
-                : null;
-              const productPayload =
-                featuredProducts.length > 0
-                  ? featuredProducts.map((p) => ({
-                      id: p.id,
-                      name: p.name,
-                      price: p.price,
-                      salePrice: p.salePrice,
-                      imageUrl: p.imageUrl,
-                      productUrl: this.buildProductUrl(p.id, referralCode),
-                    }))
-                  : undefined;
-              await this.emailService.sendBroadcastAnnouncement(
-                user.email,
-                user.name || 'there',
-                dto.title,
-                dto.message,
-                productPayload,
-              );
-              job.emailSent++;
-            } catch (err) {
-              job.emailFailed++;
-              this.logger.warn(
-                `Broadcast ${broadcastId}: email failed for ${user.email}:`,
-                err,
-              );
-            }
-          }
-        } else {
-          if (sendEmail && rec.email) {
-            try {
-              const productPayload =
-                featuredProducts.length > 0
-                  ? featuredProducts.map((p) => ({
-                      id: p.id,
-                      name: p.name,
-                      price: p.price,
-                      salePrice: p.salePrice,
-                      imageUrl: p.imageUrl,
-                      productUrl: this.buildProductUrl(p.id, null),
-                    }))
-                  : undefined;
-              await this.emailService.sendBroadcastAnnouncement(
-                rec.email,
-                rec.name || 'there',
-                dto.title,
-                dto.message,
-                productPayload,
-              );
-              job.emailSent++;
-            } catch (err) {
-              job.emailFailed++;
-              this.logger.warn(
-                `Broadcast ${broadcastId}: email failed for ${rec.email}:`,
-                err,
-              );
-            }
+            const notification = await this.notificationsService.create({
+              userId: user.id,
+              type: NotificationType.SYSTEM_ANNOUNCEMENT,
+              title: dto.title,
+              message: dto.message,
+              metadata:
+                Object.keys(metadata).length > 0 ? metadata : undefined,
+              link: firstProductLink ?? undefined,
+            });
+            job.notificationsCreated++;
+            await this.notificationsGateway.sendNotificationToUser(
+              user.id,
+              notification,
+            );
+          } catch (err) {
+            this.logger.warn(
+              `Broadcast ${broadcastId}: notification failed for user ${user.id}:`,
+              err,
+            );
           }
         }
+        await this.broadcastRepository.update(broadcastId, {
+          notificationsCreated: job.notificationsCreated,
+        });
+      }
 
-        // Flush intermediate progress to DB periodically
-        if ((i + 1) % DB_FLUSH_EVERY === 0) {
+      // ── Emails ───────────────────────────────────────────────────────────
+      if (sendEmail) {
+        if (isAffiliatePromo) {
+          // Strategy B: 50 concurrent individual sends (per-recipient ref URLs)
+          const affiliateRecipients = recipients.filter(
+            (r): r is { kind: 'user'; user: User } =>
+              r.kind === 'user' && !!r.user.email,
+          );
+
+          const CONCURRENCY = 50;
+          for (let i = 0; i < affiliateRecipients.length; i += CONCURRENCY) {
+            const chunk = affiliateRecipients.slice(i, i + CONCURRENCY);
+            const results = await Promise.allSettled(
+              chunk.map(async (rec) => {
+                const user = rec.user;
+                const referralCode = await this.getReferralCodeForAffiliate(
+                  user.id,
+                );
+                const productPayload =
+                  featuredProducts.length > 0
+                    ? featuredProducts.map((p) => ({
+                        id: p.id,
+                        name: p.name,
+                        price: p.price,
+                        salePrice: p.salePrice,
+                        imageUrl: p.imageUrl,
+                        productUrl: this.buildProductUrl(p.id, referralCode),
+                      }))
+                    : undefined;
+                await this.emailService.sendBroadcastAnnouncement(
+                  user.email!,
+                  user.name || 'there',
+                  dto.title,
+                  dto.message,
+                  productPayload,
+                );
+              }),
+            );
+
+            for (const result of results) {
+              if (result.status === 'fulfilled') {
+                job.emailSent++;
+              } else {
+                job.emailFailed++;
+                this.logger.warn(
+                  `Broadcast ${broadcastId}: affiliate email failed:`,
+                  result.reason,
+                );
+              }
+            }
+
+            await this.broadcastRepository.update(broadcastId, {
+              emailSent: job.emailSent,
+            });
+          }
+        } else {
+          // Strategy A: SendGrid personalizations batch (up to 1,000 per call)
+          const emailRecipients: Array<{ email: string; name: string }> =
+            recipients
+              .filter((r) =>
+                r.kind === 'user' ? !!r.user.email : !!r.email,
+              )
+              .map((r) =>
+                r.kind === 'user'
+                  ? { email: r.user.email!, name: r.user.name || 'there' }
+                  : { email: r.email, name: r.name || 'there' },
+              );
+
+          const productPayload = featuredProducts.map((p) => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            salePrice: p.salePrice,
+            imageUrl: p.imageUrl,
+            productUrl: this.buildProductUrl(p.id, null),
+          }));
+
+          const result = await this.emailService.sendBroadcastBatch(
+            emailRecipients,
+            dto.title,
+            dto.message,
+            productPayload,
+          );
+
+          job.emailSent += result.sent;
+          job.emailFailed += result.failed;
+
           await this.broadcastRepository.update(broadcastId, {
             emailSent: job.emailSent,
-            notificationsCreated: job.notificationsCreated,
           });
         }
       }
@@ -769,8 +797,8 @@ export class AdminBroadcastService implements OnModuleInit {
         .catch(() => {});
       throw err;
     } finally {
-      // Clean up in-memory tracker after a short delay so the last poll
-      // that reads "done" still finds the entry
+      // Keep the in-memory entry alive briefly so the final progress poll
+      // still finds the "done" state before the entry is cleaned up.
       setTimeout(() => {
         this.broadcastJobs.delete(broadcastId);
       }, 30_000);
