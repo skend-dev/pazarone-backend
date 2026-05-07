@@ -17,6 +17,7 @@ import { UnsubscribeService } from './services/unsubscribe.service';
 import { CustomerNotificationPreferences } from '../customer/entities/customer-notification-preferences.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { MarketingModule } from '../marketing/marketing.module';
+import { MarketingContact } from '../marketing/entities/marketing-contact.entity';
 import { EmailModule } from '../email/email.module';
 
 @Module({
@@ -31,6 +32,7 @@ import { EmailModule } from '../email/email.module';
       PasswordReset,
       CustomerNotificationPreferences,
       SellerSettings,
+      MarketingContact,
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

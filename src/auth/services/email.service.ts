@@ -512,8 +512,15 @@ You received this email because your password was changed on PazarOne.`,
         title,
         message,
         products || [],
+        `${this.frontendUrl}/unsubscribe?email=${encodeURIComponent(email)}`,
       ),
-      text: this.getBroadcastAnnouncementText(name, title, message, products || []),
+      text: this.getBroadcastAnnouncementText(
+        name,
+        title,
+        message,
+        products || [],
+        `${this.frontendUrl}/unsubscribe?email=${encodeURIComponent(email)}`,
+      ),
       headers: this.getEmailHeaders(email),
     };
 
@@ -527,6 +534,100 @@ You received this email because your password was changed on PazarOne.`,
       );
       throw error;
     }
+  }
+
+  /**
+   * Send a broadcast announcement to many recipients in bulk using SendGrid
+   * personalizations. One API call per 1,000 recipients instead of one call
+   * per email. The recipient name and unsubscribe URL are substituted
+   * server-side by SendGrid via the `-recipientName-` and `-unsubEmail-` tags.
+   *
+   * Products must be the same for every recipient in the batch (use
+   * sendBroadcastAnnouncement for per-recipient product URLs, e.g. affiliate
+   * referral links).
+   */
+  async sendBroadcastBatch(
+    recipients: Array<{ email: string; name: string }>,
+    title: string,
+    message: string,
+    products: Array<{
+      id: string;
+      name: string;
+      price: number | null;
+      salePrice: number | null;
+      imageUrl: string | null;
+      productUrl: string;
+    }>,
+  ): Promise<{ sent: number; failed: number }> {
+    if (!recipients.length) return { sent: 0, failed: 0 };
+
+    const NAME_TAG = '-recipientName-';
+    const UNSUB_TAG = '-unsubEmail-';
+    const BATCH_SIZE = 1000;
+
+    // Render HTML and text once with substitution placeholders.
+    // SendGrid swaps -recipientName- and -unsubEmail- per personalization.
+    const UNSUB_LINK = `${this.frontendUrl}/unsubscribe?email=${UNSUB_TAG}`;
+    const sharedHtml = this.getBroadcastAnnouncementEmailTemplate(
+      NAME_TAG,
+      title,
+      message,
+      products,
+      UNSUB_LINK,
+    );
+    const sharedText = this.getBroadcastAnnouncementText(
+      NAME_TAG,
+      title,
+      message,
+      products,
+      UNSUB_LINK,
+    );
+
+    let sent = 0;
+    let failed = 0;
+    const totalChunks = Math.ceil(recipients.length / BATCH_SIZE);
+
+    for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+      const chunk = recipients.slice(i, i + BATCH_SIZE);
+      const chunkNum = Math.floor(i / BATCH_SIZE) + 1;
+
+      const personalizations = chunk.map((r) => ({
+        to: [{ email: r.email }],
+        substitutions: { [NAME_TAG]: r.name || 'there', [UNSUB_TAG]: r.email },
+        headers: {
+          'List-Unsubscribe': `<${this.frontendUrl}/unsubscribe?email=${encodeURIComponent(r.email)}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      }));
+
+      const msg = {
+        personalizations,
+        from: {
+          email: this.marketingFromEmail,
+          name: this.marketingFromName,
+        },
+        replyTo: this.marketingFromEmail,
+        subject: title,
+        html: sharedHtml,
+        text: sharedText,
+      };
+
+      try {
+        await sgMail.send(msg);
+        sent += chunk.length;
+        this.logger.log(
+          `Broadcast batch ${chunkNum}/${totalChunks}: sent ${chunk.length} emails`,
+        );
+      } catch (error) {
+        failed += chunk.length;
+        this.logger.error(
+          `Broadcast batch ${chunkNum}/${totalChunks}: failed for ${chunk.length} emails`,
+          error,
+        );
+      }
+    }
+
+    return { sent, failed };
   }
 
   /**
@@ -628,6 +729,7 @@ You received this email because your password was changed on PazarOne.`,
       imageUrl: string | null;
       productUrl: string;
     }>,
+    unsubscribeUrl: string,
   ): string {
     const formatPrice = (price: number | null): string => {
       if (price === null || price === undefined) return 'N/A';
@@ -726,6 +828,9 @@ You received this email because your password was changed on PazarOne.`,
               <p style="font-size: 16px; color: #1a1d21; white-space: pre-wrap; margin: 0;">${message}</p>
               ${productsSection}
               ${this.getEmailFooter('you are registered on PazarOne')}
+              <p style="margin: 16px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center;">
+                <a href="${unsubscribeUrl}" style="color: #9ca3af; text-decoration: underline;">Unsubscribe</a>
+              </p>
             </div>
           </div>
         </body>
@@ -742,6 +847,7 @@ You received this email because your password was changed on PazarOne.`,
       name: string;
       productUrl: string;
     }>,
+    unsubscribeUrl: string,
   ): string {
     let text = `PazarOne – ${title}\n\nHello ${name},\n\n${message}\n\n`;
     if (products.length > 0) {
@@ -751,6 +857,7 @@ You received this email because your password was changed on PazarOne.`,
       });
     }
     text += `\nYou received this email because you are registered on PazarOne.`;
+    text += `\n\nUnsubscribe: ${unsubscribeUrl}`;
     return text;
   }
 
