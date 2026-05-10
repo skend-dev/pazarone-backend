@@ -82,6 +82,16 @@ class EnvironmentVariables {
   @IsOptional()
   FRONTEND_URL?: string = 'http://localhost:3000';
 
+  /** If set, require ?token= on GET /api/meta-feed */
+  @IsString()
+  @IsOptional()
+  META_CATALOG_FEED_SECRET?: string;
+
+  /** Default locale segment in product URLs (e.g. mk) */
+  @IsString()
+  @IsOptional()
+  META_CATALOG_DEFAULT_LOCALE?: string;
+
   // SendGrid
   @IsString()
   @IsOptional()
@@ -217,6 +227,8 @@ export function validate(config: Record<string, unknown>) {
     'JWT_REFRESH_EXPIRES_IN',
     'CORS_ORIGIN',
     'FRONTEND_URL',
+    'META_CATALOG_FEED_SECRET',
+    'META_CATALOG_DEFAULT_LOCALE',
     'SENDGRID_API_KEY',
     'SENDGRID_FROM_EMAIL',
     'SENDGRID_FROM_NAME',

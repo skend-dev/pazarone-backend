@@ -15,6 +15,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { PublicProductQueryDto } from './dto/public-product-query.dto';
+import { MetaCatalogFeedFilters } from './dto/meta-catalog-feed-filters.dto';
 import { User, UserType } from '../users/entities/user.entity';
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1227,6 +1228,113 @@ export class ProductsService {
 
     return {
       products: productsWithStore,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Active approved marketplace products with variants loaded — for Meta / Google catalog feeds.
+   */
+  async findAllForMetaCatalogFeed(
+    page: number,
+    limit: number,
+    filters?: MetaCatalogFeedFilters,
+  ): Promise<{
+    products: Product[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    const skip = (page - 1) * limit;
+
+    const queryBuilder = this.productsRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.seller', 'seller')
+      .leftJoinAndSelect('product.variants', 'variants')
+      .leftJoin(
+        SellerSettings,
+        'sellerSettings',
+        'sellerSettings.sellerId = product.sellerId',
+      )
+      .addSelect(['sellerSettings.storeName', 'sellerSettings.logo'])
+      .where('product.status = :status', { status: ProductStatus.ACTIVE })
+      .andWhere('product.approved = :approved', { approved: true })
+      .andWhere(
+        '(sellerSettings.paymentRestricted IS NULL OR sellerSettings.paymentRestricted = false)',
+      )
+      .orderBy('product.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    const categoriesParam = filters?.categories?.trim();
+    const categoryIds =
+      categoriesParam
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean) ?? [];
+    if (categoryIds.length > 0) {
+      queryBuilder.andWhere(
+        '(product.categoryId IN (:...categoryIds) OR category.parentId IN (:...categoryIds))',
+        { categoryIds },
+      );
+    } else if (filters?.category?.trim()) {
+      queryBuilder.andWhere('product.categoryId = :categoryId', {
+        categoryId: filters.category.trim(),
+      });
+    }
+
+    const multiSellerIds =
+      filters?.sellerIds
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean) ?? [];
+    if (multiSellerIds.length > 0) {
+      queryBuilder.andWhere('product.sellerId IN (:...multiSellerIds)', {
+        multiSellerIds,
+      });
+    } else if (filters?.sellerId?.trim()) {
+      queryBuilder.andWhere('product.sellerId = :sellerId', {
+        sellerId: filters.sellerId.trim(),
+      });
+    }
+
+    const [products, total] = await queryBuilder.getManyAndCount();
+
+    const sellerIds = [...new Set(products.map((p) => p.sellerId))];
+    const sellerSettingsMap = new Map<string, SellerSettings>();
+    if (sellerIds.length > 0) {
+      const sellerSettings = await this.sellerSettingsRepository.find({
+        where: { sellerId: In(sellerIds) },
+      });
+      sellerSettings.forEach((settings) => {
+        sellerSettingsMap.set(settings.sellerId, settings);
+      });
+    }
+
+    const normalizedProducts = this.normalizeProductPrices(products);
+    const productsWithStore = normalizedProducts.map((product) => {
+      const sellerSettings = sellerSettingsMap.get(product.sellerId);
+      return {
+        ...product,
+        seller: {
+          ...product.seller,
+          storeName: sellerSettings?.storeName || null,
+          storeLogo: sellerSettings?.logo || null,
+        },
+      };
+    });
+
+    return {
+      products: productsWithStore as Product[],
       pagination: {
         page,
         limit,
