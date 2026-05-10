@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProductsService } from './products.service';
 import { ProductsController } from './products.controller';
 import { PublicProductsController } from './public-products.controller';
+import { MetaCatalogFeedController } from './meta-catalog-feed.controller';
+import { MetaCatalogFeedService } from './meta-catalog-feed.service';
 import { Product } from './entities/product.entity';
 import { ProductVariantAttribute } from './entities/product-variant-attribute.entity';
 import { ProductVariantValue } from './entities/product-variant-value.entity';
@@ -31,8 +33,12 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
     PlatformModule,
     CloudinaryModule,
   ],
-  controllers: [ProductsController, PublicProductsController],
-  providers: [ProductsService],
+  controllers: [
+    ProductsController,
+    PublicProductsController,
+    MetaCatalogFeedController,
+  ],
+  providers: [ProductsService, MetaCatalogFeedService],
   exports: [ProductsService],
 })
 export class ProductsModule {}
