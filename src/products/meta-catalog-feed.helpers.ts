@@ -1,3 +1,4 @@
+import type { Category } from '../categories/entities/category.entity';
 import { Product, ProductStatus } from './entities/product.entity';
 
 function slugify(text: string): string {
@@ -151,6 +152,43 @@ export function productStoreName(product: Product): string {
   return name || 'PazarOne';
 }
 
+const PRODUCT_TYPE_MAX = 750;
+
+/** Localized category display name for feed (matches storefront `locale` when translations exist). */
+export function metaFeedCategoryLabel(
+  category: Category,
+  locale: string,
+): string {
+  const loc = locale?.slice(0, 2).toLowerCase();
+  const t = category.translations;
+  if (t && loc === 'mk' && t.mk?.trim()) return t.mk.trim();
+  if (t && loc === 'sq' && t.sq?.trim()) return t.sq.trim();
+  if (t && loc === 'tr' && t.tr?.trim()) return t.tr.trim();
+  return category.name?.trim() || '';
+}
+
+/**
+ * Merchant-defined category path for g:product_type (Meta / Google Shopping).
+ * Enables Commerce Manager catalog sets filtered by category.
+ */
+export function metaFeedProductType(
+  product: Product,
+  locale: string,
+): string | null {
+  const cat = product.category;
+  if (!cat) return null;
+  const child = metaFeedCategoryLabel(cat, locale);
+  if (!child) return null;
+  const parentEntity = cat.parent;
+  if (parentEntity) {
+    const parent = metaFeedCategoryLabel(parentEntity, locale);
+    if (parent && parent !== child) {
+      return `${parent} > ${child}`.slice(0, PRODUCT_TYPE_MAX);
+    }
+  }
+  return child.slice(0, PRODUCT_TYPE_MAX);
+}
+
 export function productToMetaFeedItemXml(
   product: Product,
   siteOrigin: string,
@@ -169,6 +207,14 @@ export function productToMetaFeedItemXml(
   const link = escapeXml(metaFeedProductLink(product, siteOrigin, locale));
   const imageLink = escapeXml(metaFeedProductImage(product, siteOrigin));
   const price = escapeXml(formatMetaCatalogMoney(amount, currency));
+  const productType = metaFeedProductType(product, locale);
+  const productTypeXml = productType
+    ? `<g:product_type>${escapeXml(productType)}</g:product_type>`
+    : '';
+  const categoryIdXml =
+    product.categoryId?.trim() && productType
+      ? `<g:custom_label_0>${escapeXml(product.categoryId.trim())}</g:custom_label_0>`
+      : '';
 
   return `
     <item>
@@ -181,6 +227,8 @@ export function productToMetaFeedItemXml(
       <g:link>${link}</g:link>
       <g:image_link>${imageLink}</g:image_link>
       <g:brand>${escapeXml(brand.slice(0, 100))}</g:brand>
+      ${productTypeXml}
+      ${categoryIdXml}
     </item>`;
 }
 
@@ -191,6 +239,7 @@ export function productToMetaFeedItemJson(
 ) {
   const { amount, currency } = metaFeedPrice(product);
   const brand = productStoreName(product);
+  const productType = metaFeedProductType(product, locale);
   return {
     id: product.id,
     title: product.name,
@@ -203,6 +252,10 @@ export function productToMetaFeedItemJson(
     link: metaFeedProductLink(product, siteOrigin, locale),
     image_link: metaFeedProductImage(product, siteOrigin),
     brand,
+    ...(productType ? { product_type: productType } : {}),
+    ...(product.categoryId?.trim() && productType
+      ? { custom_label_0: product.categoryId.trim() }
+      : {}),
   };
 }
 

@@ -1258,6 +1258,7 @@ export class ProductsService {
     const queryBuilder = this.productsRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('category.parent', 'categoryParent')
       .leftJoinAndSelect('product.seller', 'seller')
       .leftJoinAndSelect('product.variants', 'variants')
       .leftJoin(
