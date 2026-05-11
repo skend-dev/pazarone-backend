@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Brackets } from 'typeorm';
 import {
   Notification,
   NotificationType,
@@ -13,14 +13,54 @@ import {
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 import { MarkReadDto } from './dto/mark-read.dto';
-import { UserType } from '../users/entities/user.entity';
+import { User, UserType } from '../users/entities/user.entity';
 
 @Injectable()
 export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private notificationsRepository: Repository<Notification>,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
   ) {}
+
+  /**
+   * Rows visible in the inbox: own notifications, plus (for admins) pending product
+   * approvals addressed to any admin so new admins still see the queue.
+   */
+  private recipientBracket(
+    userId: string,
+    userType?: UserType,
+  ): Brackets {
+    if (userType === UserType.ADMIN) {
+      return new Brackets((qb) => {
+        qb.where('notification.userId = :recipientUserId', {
+          recipientUserId: userId,
+        }).orWhere(
+          '(notification.type = :_approvalType AND COALESCE((notification.metadata->>\'pendingApproval\')::boolean, false) = true)',
+          { _approvalType: NotificationType.PRODUCT_APPROVED },
+        );
+      });
+    }
+    return new Brackets((qb) => {
+      qb.where('notification.userId = :recipientUserId', {
+        recipientUserId: userId,
+      });
+    });
+  }
+
+  private async countUnread(
+    userId: string,
+    userType?: UserType,
+  ): Promise<number> {
+    const qb = this.notificationsRepository
+      .createQueryBuilder('notification')
+      .where('notification.status = :status', {
+        status: NotificationStatus.UNREAD,
+      })
+      .andWhere(this.recipientBracket(userId, userType));
+    return qb.getCount();
+  }
 
   /**
    * Create a new notification
@@ -67,10 +107,9 @@ export class NotificationsService {
     const { page = 1, limit = 20, status, type } = query;
     const skip = (page - 1) * limit;
 
-    // Admins can see all notifications, regular users only see their own
     const queryBuilder = this.notificationsRepository
       .createQueryBuilder('notification')
-      .where('notification.userId = :userId', { userId })
+      .where(this.recipientBracket(userId, userType))
       .skip(skip)
       .take(limit)
       .orderBy('notification.createdAt', 'DESC');
@@ -85,13 +124,7 @@ export class NotificationsService {
 
     const [notifications, total] = await queryBuilder.getManyAndCount();
 
-    // Get unread count
-    const unreadCount = await this.notificationsRepository.count({
-      where: {
-        userId,
-        status: NotificationStatus.UNREAD,
-      },
-    });
+    const unreadCount = await this.countUnread(userId, userType);
 
     return {
       notifications,
@@ -168,12 +201,24 @@ export class NotificationsService {
   /**
    * Mark all notifications as read for a user
    */
-  async markAllAsRead(userId: string): Promise<{ count: number }> {
-    const result = await this.notificationsRepository.update(
-      {
-        userId,
+  async markAllAsRead(
+    userId: string,
+    userType?: UserType,
+  ): Promise<{ count: number }> {
+    const qb = this.notificationsRepository
+      .createQueryBuilder('notification')
+      .select('notification.id')
+      .where('notification.status = :status', {
         status: NotificationStatus.UNREAD,
-      },
+      })
+      .andWhere(this.recipientBracket(userId, userType));
+
+    const rows = await qb.getMany();
+    if (rows.length === 0) {
+      return { count: 0 };
+    }
+    const result = await this.notificationsRepository.update(
+      { id: In(rows.map((r) => r.id)) },
       {
         status: NotificationStatus.READ,
         readAt: new Date(),
@@ -225,12 +270,11 @@ export class NotificationsService {
    * Get unread count for a user
    */
   async getUnreadCount(userId: string): Promise<number> {
-    return await this.notificationsRepository.count({
-      where: {
-        userId,
-        status: NotificationStatus.UNREAD,
-      },
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'userType'],
     });
+    return this.countUnread(userId, user?.userType);
   }
 
   /**

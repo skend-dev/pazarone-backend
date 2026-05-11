@@ -92,7 +92,7 @@ export class NotificationsController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   markAllAsRead(@CurrentUser() user: User) {
-    return this.notificationsService.markAllAsRead(user.id);
+    return this.notificationsService.markAllAsRead(user.id, user.userType);
   }
 
   @Delete(':id')
