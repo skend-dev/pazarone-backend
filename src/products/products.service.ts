@@ -72,6 +72,75 @@ export class ProductsService {
       .filter((url): url is string => url !== null && typeof url === 'string');
   }
 
+  /** Compare image lists as sets (order-insensitive). */
+  private areImageListsEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((url, i) => url === sortedB[i]);
+  }
+
+  /**
+   * Notify all admins that a product needs manual approval (reuse PRODUCT_APPROVED type + pendingApproval metadata).
+   */
+  private async notifyAdminsProductPendingApproval(
+    product: Pick<Product, 'id' | 'name' | 'sellerId'>,
+    title: string,
+    message: string,
+  ): Promise<void> {
+    try {
+      const adminUsers = await this.usersRepository.find({
+        where: { userType: UserType.ADMIN },
+      });
+
+      const notifications = await this.notificationsService.createMany(
+        adminUsers.map((admin) => ({
+          userId: admin.id,
+          type: NotificationType.PRODUCT_APPROVED,
+          title,
+          message,
+          metadata: {
+            productId: product.id,
+            productName: product.name,
+            sellerId: product.sellerId,
+            pendingApproval: true,
+          },
+          link: `/admin/products`,
+        })),
+      );
+
+      for (const notification of notifications) {
+        await this.notificationsGateway.sendNotificationToUser(
+          notification.userId,
+          notification,
+        );
+      }
+    } catch (error) {
+      console.error(`Failed to send product approval notification:`, error);
+    }
+  }
+
+  /**
+   * Seller changed listing images: require admin approval again (same visibility rules as a new unapproved product).
+   */
+  private async applyImageChangeReapproval(
+    product: Product,
+    notifyTitle: string,
+    notifyMessage: string,
+  ): Promise<void> {
+    product.approved = false;
+    product.status = ProductStatus.INACTIVE;
+    product.rejectionMessage = null;
+    product.rejectedAt = null;
+    await this.notifyAdminsProductPendingApproval(
+      product,
+      notifyTitle,
+      notifyMessage,
+    );
+  }
+
   /**
    * Check if sale price is still valid (not expired)
    */
@@ -316,40 +385,11 @@ export class ProductsService {
 
     // Send notification to admins if product needs approval
     if (!savedProduct.approved) {
-      try {
-        // Find all admin users
-        const adminUsers = await this.usersRepository.find({
-          where: { userType: UserType.ADMIN },
-        });
-
-        // Create notifications for all admins
-        const notifications = await this.notificationsService.createMany(
-          adminUsers.map((admin) => ({
-            userId: admin.id,
-            type: NotificationType.PRODUCT_APPROVED, // Using this type for pending approval
-            title: 'New Product Pending Approval',
-            message: `Product "${savedProduct.name}" from seller needs approval`,
-            metadata: {
-              productId: savedProduct.id,
-              productName: savedProduct.name,
-              sellerId: savedProduct.sellerId,
-              pendingApproval: true,
-            },
-            link: `/admin/products`,
-          })),
-        );
-
-        // Send real-time notifications to all connected admins
-        for (const notification of notifications) {
-          await this.notificationsGateway.sendNotificationToUser(
-            notification.userId,
-            notification,
-          );
-        }
-      } catch (error) {
-        // Log error but don't fail product creation
-        console.error(`Failed to send product approval notification:`, error);
-      }
+      await this.notifyAdminsProductPendingApproval(
+        savedProduct,
+        'New Product Pending Approval',
+        `Product "${savedProduct.name}" from seller needs approval`,
+      );
     }
 
     // Reload with all relations including variants
@@ -773,19 +813,23 @@ export class ProductsService {
       }
     }
 
+    let imagesRequireReapproval = false;
     // Handle image cleanup if images are being updated
     if (updateProductDto.images !== undefined) {
       // Normalize oldImages using helper function (always returns array)
       const oldImages = this.normalizeImages(product.images);
-      
-      
+
       const newImages = updateProductDto.images;
-      
+
       // Validate newImages is an array
       if (!Array.isArray(newImages)) {
         throw new BadRequestException('Images must be an array');
       }
-      
+
+      imagesRequireReapproval =
+        userType !== UserType.ADMIN &&
+        !this.areImageListsEqual(oldImages, newImages);
+
       // Find images that are being removed (old images not in new array)
       const imagesToDelete = oldImages.filter(
         (oldUrl) => !newImages.includes(oldUrl),
@@ -812,6 +856,14 @@ export class ProductsService {
     }
 
     Object.assign(product, productData);
+
+    if (imagesRequireReapproval) {
+      await this.applyImageChangeReapproval(
+        product,
+        'Product Pending Approval',
+        `Product "${product.name}" had its images updated and needs approval again`,
+      );
+    }
 
     // Explicitly apply categoryId when provided so the loaded category relation does not override it on save
     if (updateProductDto.categoryId !== undefined) {
@@ -841,8 +893,7 @@ export class ProductsService {
       product.rejectedAt = null;
     }
 
-    // Note: Updating an existing product doesn't change its approval status
-    // Only new products require approval (unless seller is verified)
+    // Note: Seller image updates reset approval (see imagesRequireReapproval). Admin updates do not.
     // If a rejected product is updated, it remains unapproved and needs re-review
 
     // Save product first (without variant relations)
@@ -999,6 +1050,16 @@ export class ProductsService {
     }
 
     product.images = images;
+
+    const imagesChanged = !this.areImageListsEqual(oldImages, images);
+    if (imagesChanged && userType !== UserType.ADMIN) {
+      await this.applyImageChangeReapproval(
+        product,
+        'Product Pending Approval',
+        `Product "${product.name}" had its images updated and needs approval again`,
+      );
+    }
+
     const updatedProduct = await this.productsRepository.save(product);
 
     // Reload with category relation
