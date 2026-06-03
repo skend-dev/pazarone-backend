@@ -1634,7 +1634,10 @@ export class ProductsService {
     }
 
     // Validate and create/update product variants
-    const totalStock = variants.reduce((sum, v) => sum + v.stock, 0);
+    const totalStock = variants.reduce((sum, v) => {
+      const stock = Number(v.stock);
+      return sum + (Number.isNaN(stock) ? 0 : stock);
+    }, 0);
     const variantsToInsert: Array<{
       productId: string;
       combination: Record<string, string>;
@@ -1693,14 +1696,24 @@ export class ProductsService {
       );
       const existingVariant = existingVariantsMap?.get(normalizedCombination);
 
+      const variantStock = Number(variantDto.stock);
+      const parsedStock = Number.isNaN(variantStock) ? 0 : variantStock;
+      const rawPrice = variantDto.price;
+      const parsedPrice =
+        rawPrice === null || rawPrice === undefined || rawPrice === ('' as any)
+          ? null
+          : Number(rawPrice);
+      const variantPrice =
+        parsedPrice === null || Number.isNaN(parsedPrice) ? null : parsedPrice;
+
       if (existingVariant) {
         // Update existing variant
         variantsToUpdate.push({
           id: existingVariant.id,
           combination: variantDto.combination,
           combinationDisplay: combinationDisplay.trim(),
-          stock: variantDto.stock,
-          price: variantDto.price ?? null,
+          stock: parsedStock,
+          price: variantPrice,
           sku: variantDto.sku || null,
           images: variantDto.images || null,
           isActive: variantDto.isActive ?? true,
@@ -1711,8 +1724,8 @@ export class ProductsService {
           productId,
           combination: variantDto.combination,
           combinationDisplay: combinationDisplay.trim(),
-          stock: variantDto.stock,
-          price: variantDto.price ?? null,
+          stock: parsedStock,
+          price: variantPrice,
           sku: variantDto.sku || null,
           images: variantDto.images || null,
           isActive: variantDto.isActive ?? true,
@@ -1741,7 +1754,24 @@ export class ProductsService {
       await this.variantRepository.insert(variantsToInsert);
     }
 
-    // Update product total stock
-    await this.productsRepository.update(productId, { stock: totalStock });
+    // Update product total stock and availability status
+    const product = await this.productsRepository.findOne({
+      where: { id: productId },
+    });
+    if (product) {
+      product.stock = totalStock;
+      if (
+        totalStock === 0 &&
+        product.status === ProductStatus.ACTIVE
+      ) {
+        product.status = ProductStatus.OUT_OF_STOCK;
+      } else if (
+        totalStock > 0 &&
+        product.status === ProductStatus.OUT_OF_STOCK
+      ) {
+        product.status = ProductStatus.ACTIVE;
+      }
+      await this.productsRepository.save(product);
+    }
   }
 }
