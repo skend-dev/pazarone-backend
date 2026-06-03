@@ -258,6 +258,33 @@ export class AdminProductsService {
     return updatedProduct;
   }
 
+  async remove(id: string): Promise<{ success: boolean; message: string }> {
+    const product = await this.productsRepository.findOne({
+      where: { id },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    await this.productsService.remove(
+      id,
+      product.sellerId,
+      UserType.ADMIN,
+    );
+
+    const stillExists = await this.productsRepository.findOne({
+      where: { id },
+    });
+
+    return {
+      success: true,
+      message: stillExists
+        ? 'Product has order history and was deactivated instead of permanently deleted.'
+        : 'Product deleted successfully.',
+    };
+  }
+
   async update(
     id: string,
     updateProductDto: UpdateProductDto,
