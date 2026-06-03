@@ -10,7 +10,7 @@ import {
   ValidateNested,
   ArrayMinSize,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateVariantValueDto {
@@ -83,6 +83,11 @@ export class CreateProductVariantDto {
   combination: Record<string, string>;
 
   @ApiProperty({ description: 'Stock quantity for this variant', example: 10 })
+  @Transform(({ value }) => {
+    if (value === '' || value === null || value === undefined) return 0;
+    const n = Number(value);
+    return Number.isNaN(n) ? value : n;
+  })
   @IsNumber()
   @Min(0)
   stock: number;
@@ -90,6 +95,11 @@ export class CreateProductVariantDto {
   @ApiPropertyOptional({
     description: 'Price for this variant (if null, uses product base price)',
     example: 149.99,
+  })
+  @Transform(({ value }) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const n = Number(value);
+    return Number.isNaN(n) ? value : n;
   })
   @IsNumber()
   @Min(0)
