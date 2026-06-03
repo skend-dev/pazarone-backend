@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Delete,
   Param,
   Query,
   Body,
@@ -106,6 +107,21 @@ export class AdminProductsController {
     @Body() updateProductDto: UpdateProductDto,
   ) {
     return this.adminProductsService.update(id, updateProductDto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Delete a product',
+    description:
+      'Permanently deletes a product with no order history, or deactivates it when orders exist (admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiResponse({ status: 200, description: 'Product deleted or deactivated' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
+  remove(@Param('id') id: string) {
+    return this.adminProductsService.remove(id);
   }
 
   @Get('statistics')
