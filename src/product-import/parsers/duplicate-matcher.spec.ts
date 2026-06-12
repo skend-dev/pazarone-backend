@@ -1,4 +1,5 @@
 import {
+  addProductToExistingIndex,
   buildExistingProductIndex,
   findExistingProductMatch,
   normalizeImageUrl,
@@ -77,5 +78,20 @@ describe('duplicate-matcher', () => {
     expect(match).not.toBeNull();
     expect(resolveDuplicateRow('skip', match!).status).toBe('duplicate_skip');
     expect(resolveDuplicateRow('update', match!).status).toBe('duplicate_update');
+  });
+
+  it('adds newly created products to the in-memory index', () => {
+    const liveIndex = buildExistingProductIndex([]);
+    addProductToExistingIndex(liveIndex, {
+      id: 'new-1',
+      sku: null,
+      name: 'Fresh Product',
+      images: ['https://shop.example/new.jpg'],
+    });
+    const match = findExistingProductMatch(
+      { name: 'Fresh Product', images: ['https://shop.example/new.jpg'] },
+      liveIndex,
+    );
+    expect(match?.productId).toBe('new-1');
   });
 });

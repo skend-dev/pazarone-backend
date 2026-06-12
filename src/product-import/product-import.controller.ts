@@ -3,10 +3,12 @@ import {
   Body,
   Controller,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -21,6 +23,10 @@ import { User } from '../users/entities/user.entity';
 import { ProductImportService } from './product-import.service';
 import { parseProductImportOptions } from './import-options.util';
 import { productImportMulterOptions } from './import-upload.config';
+import {
+  initImportStreamResponse,
+  writeImportStreamEvent,
+} from './import-stream.util';
 
 @ApiTags('seller-products-import')
 @ApiBearerAuth('JWT-auth')
@@ -95,6 +101,59 @@ export class ProductImportController {
       user.id,
       options,
     );
+  }
+
+  @Post('stream')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import products with live progress (WooCommerce or Shopify export)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        options: {
+          type: 'string',
+          description: 'JSON string of ProductImportOptionsDto',
+        },
+      },
+      required: ['file', 'options'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', productImportMulterOptions))
+  async importStream(
+    @CurrentUser() user: User,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('options') optionsJson?: string,
+    @Res() res?: Response,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('File required as multipart field "file".');
+    }
+    if (!res) {
+      throw new BadRequestException('Streaming response unavailable.');
+    }
+    const options = parseProductImportOptions(optionsJson, true)!;
+    initImportStreamResponse(res);
+
+    try {
+      const result = await this.productImportService.import(
+        file.buffer,
+        file.originalname || 'import.csv',
+        user.id,
+        options,
+        (data) => writeImportStreamEvent(res, { type: 'progress', data }),
+      );
+      writeImportStreamEvent(res, { type: 'complete', result });
+    } catch (err) {
+      writeImportStreamEvent(res, {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Import failed',
+      });
+    } finally {
+      res.end();
+    }
   }
 
 }
