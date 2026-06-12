@@ -35,6 +35,7 @@ import {
   buildExistingProductIndex,
   ExistingProductIndex,
 } from './parsers/duplicate-matcher';
+import { validateImportRowImages, validateImportRowsImages } from './parsers/import-image-validation';
 
 const PREVIEW_SAMPLE_LIMIT = 25;
 const PREVIEW_ERROR_CAP = 120;
@@ -75,10 +76,11 @@ export class ProductImportService {
             duplicateMode,
           });
 
+    const validated = await validateImportRowsImages(parsed);
     const categories = await this.loadCategoryMatchCandidates();
     const preview = this.buildPreviewResult(
       normalized.format,
-      parsed,
+      validated,
       normalized.rows.length,
     );
     preview.suggestedCategoryMappings = buildCategoryMappings(
@@ -113,8 +115,9 @@ export class ProductImportService {
             duplicateMode,
           });
 
+    const validated = await validateImportRowsImages(parsed);
     const categories = await this.loadCategoryMatchCandidates();
-    const importable = parsed.filter((r) =>
+    const importable = validated.filter((r) =>
       ['ready', 'duplicate_update'].includes(r.status),
     );
 
@@ -130,12 +133,25 @@ export class ProductImportService {
       const batch = importable.slice(i, i + IMPORT_BATCH_SIZE);
       for (const row of batch) {
         try {
+          const validatedRow = await validateImportRowImages(row);
+          if (validatedRow.status === 'skipped_no_images') {
+            result.skipped++;
+            result.rows.push({
+              line: validatedRow.line,
+              name: validatedRow.name || '',
+              sku: validatedRow.sku || null,
+              status: 'skipped',
+              message: validatedRow.message,
+            });
+            continue;
+          }
+
           if (row.status === 'duplicate_update' && row.existingProductId) {
             const existing = await this.productsRepository.findOne({
               where: { id: row.existingProductId, sellerId },
             });
             if (existing) {
-              const dto = this.rowToUpdateDto(row, options, categories);
+              const dto = this.rowToUpdateDto(validatedRow, options, categories);
               await this.productsService.update(
                 existing.id,
                 sellerId,
@@ -161,7 +177,7 @@ export class ProductImportService {
             }
           }
 
-          const dto = this.rowToCreateDto(row, options, categories);
+          const dto = this.rowToCreateDto(validatedRow, options, categories);
           const product = await this.productsService.createFromImport(
             sellerId,
             dto,
@@ -200,7 +216,7 @@ export class ProductImportService {
       'skipped_malformed',
       'duplicate_skip',
     ];
-    for (const row of parsed) {
+    for (const row of validated) {
       if (skippedStatuses.includes(row.status)) {
         result.skipped++;
         result.rows.push({

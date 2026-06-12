@@ -35,7 +35,7 @@ export function extractImageUrlsFromHtml(html: string): string[] {
 
 export function parseImageList(raw: string, descriptionHtml?: string): string[] {
   const fromColumn = (raw || '')
-    .split(/[,;\s]+/)
+    .split(',')
     .map((s) => s.trim())
     .filter((s) => isSafeExternalImageUrl(s))
     .map((s) => normalizeExternalImageUrl(s));
