@@ -458,6 +458,22 @@ export class AdminProductsService {
             results.push({ productId, status: 'success' });
             break;
           }
+          case BulkAdminProductAction.DELETE: {
+            const product = await this.productsRepository.findOne({
+              where: { id: productId },
+            });
+            if (!product) {
+              results.push({
+                productId,
+                status: 'failed',
+                message: 'Product not found',
+              });
+              break;
+            }
+            await this.remove(productId);
+            results.push({ productId, status: 'success' });
+            break;
+          }
           default:
             results.push({
               productId,

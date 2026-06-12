@@ -20,9 +20,7 @@ import {
   ResolveExternalImageAction,
   ResolveExternalImagesDto,
 } from './dto/resolve-external-images.dto';
-
-const CHECK_TIMEOUT_MS = 5000;
-const IMAGE_CONTENT_TYPES = /^image\//i;
+import { checkImageUrl } from './parsers/image-url-check';
 
 @Injectable()
 export class ProductImageHealthService {
@@ -38,6 +36,7 @@ export class ProductImageHealthService {
   async checkAllExternalProducts(): Promise<{
     checked: number;
     newlyBroken: number;
+    healed: number;
   }> {
     const products = await this.productsRepository
       .createQueryBuilder('product')
@@ -45,22 +44,30 @@ export class ProductImageHealthService {
         source: ProductImageSource.EXTERNAL,
       })
       .andWhere(
-        '(product.externalImageStatus = :healthy OR product.externalImageStatus IS NULL)',
-        { healthy: ProductExternalImageStatus.HEALTHY },
+        '(product.externalImageStatus IS NULL OR product.externalImageStatus IN (:...statuses))',
+        {
+          statuses: [
+            ProductExternalImageStatus.HEALTHY,
+            ProductExternalImageStatus.BROKEN,
+          ],
+        },
       )
       .getMany();
 
     let newlyBroken = 0;
+    let healed = 0;
     for (const product of products) {
       const wasBroken =
         product.externalImageStatus === ProductExternalImageStatus.BROKEN;
       const result = await this.checkProductImages(product);
       if (result.broken && !wasBroken) {
         newlyBroken++;
+      } else if (!result.broken && wasBroken) {
+        healed++;
       }
     }
 
-    return { checked: products.length, newlyBroken };
+    return { checked: products.length, newlyBroken, healed };
   }
 
   async recheckProduct(productId: string): Promise<Product> {
@@ -181,16 +188,45 @@ export class ProductImageHealthService {
     const images = Array.isArray(product.images) ? product.images : [];
     const brokenUrls: BrokenImageUrlEntry[] = [];
     const checkedAt = new Date().toISOString();
+    let hasWorking = false;
+    let hasInconclusive = false;
 
     for (const url of images) {
-      const check = await this.checkImageUrl(url);
-      if (!check.ok) {
-        brokenUrls.push({
-          url,
-          checkedAt,
-          httpStatus: check.status,
-        });
+      const check = await checkImageUrl(url);
+      if (check.ok) {
+        hasWorking = true;
+        continue;
       }
+      if (check.inconclusive) {
+        hasInconclusive = true;
+        continue;
+      }
+      brokenUrls.push({
+        url,
+        checkedAt,
+        httpStatus: check.status,
+      });
+    }
+
+    if (hasWorking || (hasInconclusive && brokenUrls.length === 0)) {
+      const wasBroken =
+        product.externalImageStatus === ProductExternalImageStatus.BROKEN;
+      const cleanedImages = images.filter(
+        (url) => !brokenUrls.some((entry) => entry.url === url),
+      );
+      if (cleanedImages.length > 0) {
+        product.images = cleanedImages;
+      }
+      product.externalImageStatus = ProductExternalImageStatus.HEALTHY;
+      product.brokenImageUrls = null;
+      if (wasBroken) {
+        product.externalImageIssueAt = null;
+        if (product.approved) {
+          product.status = ProductStatus.ACTIVE;
+        }
+      }
+      await this.productsRepository.save(product);
+      return { broken: false, brokenUrls: [] };
     }
 
     if (brokenUrls.length > 0) {
@@ -214,41 +250,6 @@ export class ProductImageHealthService {
     product.brokenImageUrls = null;
     await this.productsRepository.save(product);
     return { broken: false, brokenUrls: [] };
-  }
-
-  private async checkImageUrl(
-    url: string,
-  ): Promise<{ ok: boolean; status: number | null }> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
-    try {
-      let response = await fetch(url, {
-        method: 'HEAD',
-        signal: controller.signal,
-        redirect: 'follow',
-      });
-
-      if (response.status === 405 || response.status === 501) {
-        response = await fetch(url, {
-          method: 'GET',
-          signal: controller.signal,
-          redirect: 'follow',
-          headers: { Range: 'bytes=0-0' },
-        });
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      const status = response.status;
-      const ok =
-        response.ok &&
-        (IMAGE_CONTENT_TYPES.test(contentType) || contentType === '');
-
-      return { ok, status };
-    } catch {
-      return { ok: false, status: null };
-    } finally {
-      clearTimeout(timeout);
-    }
   }
 
   private async notifyAdminsBrokenImages(

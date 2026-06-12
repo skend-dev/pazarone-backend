@@ -97,6 +97,14 @@ export class AdminProductImportController {
     return this.productImageHealthService.getIssues(p, l);
   }
 
+  @Post('external-image-issues/recheck-all')
+  @ApiOperation({
+    summary: 'Re-check all external product images and refresh broken status',
+  })
+  recheckAllExternalImages() {
+    return this.productImageHealthService.checkAllExternalProducts();
+  }
+
   @Put(':id/resolve-external-images')
   @ApiOperation({ summary: 'Resolve a broken external image issue' })
   resolveExternalImages(

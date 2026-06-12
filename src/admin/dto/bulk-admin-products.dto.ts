@@ -15,6 +15,7 @@ export enum BulkAdminProductAction {
   REJECT = 'reject',
   ACTIVATE = 'activate',
   DEACTIVATE = 'deactivate',
+  DELETE = 'delete',
 }
 
 export class BulkAdminProductsDto {

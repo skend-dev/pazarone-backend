@@ -40,7 +40,7 @@ export class ProductImageHealthSchedulerService {
         const result =
           await this.productImageHealthService.checkAllExternalProducts();
         this.logger.log(
-          `Image health check done: ${result.checked} checked, ${result.newlyBroken} newly broken`,
+          `Image health check done: ${result.checked} checked, ${result.newlyBroken} newly broken, ${result.healed} healed`,
         );
       } finally {
         await queryRunner.query('SELECT pg_advisory_unlock($1)', [

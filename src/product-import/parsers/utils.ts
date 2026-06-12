@@ -43,7 +43,7 @@ export function parseImageList(raw: string, descriptionHtml?: string): string[] 
     ? extractImageUrlsFromHtml(descriptionHtml)
     : [];
 
-  return [...new Set([...fromColumn, ...fromDesc])].slice(0, 8);
+  return [...new Set([...fromDesc, ...fromColumn])].slice(0, 8);
 }
 
 export function parsePrice(raw: string | undefined): number | undefined {
