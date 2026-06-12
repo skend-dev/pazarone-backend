@@ -53,6 +53,31 @@ export function buildExistingProductIndex(
   return { bySku, byName, byPrimaryImage };
 }
 
+export function addProductToExistingIndex(
+  index: ExistingProductIndex,
+  product: ExistingProductRecord,
+): void {
+  if (product.sku) {
+    const skuKey = product.sku.toLowerCase();
+    if (!index.bySku.has(skuKey)) {
+      index.bySku.set(skuKey, product.id);
+    }
+  }
+
+  const nameKey = normalizeProductName(product.name);
+  if (nameKey && !index.byName.has(nameKey)) {
+    index.byName.set(nameKey, product.id);
+  }
+
+  const firstImage = product.images?.[0];
+  if (firstImage) {
+    const imageKey = normalizeImageUrl(firstImage);
+    if (imageKey && !index.byPrimaryImage.has(imageKey)) {
+      index.byPrimaryImage.set(imageKey, product.id);
+    }
+  }
+}
+
 export interface DuplicateMatch {
   productId: string;
   field: DuplicateMatchField;

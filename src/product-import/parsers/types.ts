@@ -57,3 +57,13 @@ export interface ImportExecutionResult {
     message?: string;
   }[];
 }
+
+export interface ImportProgressEvent {
+  phase: 'validating' | 'importing';
+  current: number;
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+}

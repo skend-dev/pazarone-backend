@@ -7,6 +7,7 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -19,6 +20,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
@@ -26,6 +28,10 @@ import { ProductImportService } from './product-import.service';
 import { ProductImageHealthService } from './product-image-health.service';
 import { parseProductImportOptions } from './import-options.util';
 import { productImportMulterOptions } from './import-upload.config';
+import {
+  initImportStreamResponse,
+  writeImportStreamEvent,
+} from './import-stream.util';
 import { ResolveExternalImagesDto } from './dto/resolve-external-images.dto';
 
 @ApiTags('admin-products-import')
@@ -78,6 +84,44 @@ export class AdminProductImportController {
       sellerId,
       options,
     );
+  }
+
+  @Post('import/stream')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Import products for a seller with live progress (admin)' })
+  @UseInterceptors(FileInterceptor('file', productImportMulterOptions))
+  async importStream(
+    @Query('sellerId', ParseUUIDPipe) sellerId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('options') optionsJson?: string,
+    @Res() res?: Response,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('File required as multipart field "file".');
+    }
+    if (!res) {
+      throw new BadRequestException('Streaming response unavailable.');
+    }
+    const options = parseProductImportOptions(optionsJson, true)!;
+    initImportStreamResponse(res);
+
+    try {
+      const result = await this.productImportService.import(
+        file.buffer,
+        file.originalname || 'import.csv',
+        sellerId,
+        options,
+        (data) => writeImportStreamEvent(res, { type: 'progress', data }),
+      );
+      writeImportStreamEvent(res, { type: 'complete', result });
+    } catch (err) {
+      writeImportStreamEvent(res, {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Import failed',
+      });
+    } finally {
+      res.end();
+    }
   }
 
   @Get('external-image-issues/count')

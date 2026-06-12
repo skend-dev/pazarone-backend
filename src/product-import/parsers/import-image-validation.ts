@@ -80,6 +80,7 @@ export async function validateImportRowImages(
 
 export async function validateImportRowsImages(
   rows: ParsedImportRow[],
+  onProgress?: (current: number, total: number) => void,
 ): Promise<ParsedImportRow[]> {
   const validated: ParsedImportRow[] = [];
 
@@ -87,6 +88,7 @@ export async function validateImportRowsImages(
     const batch = rows.slice(i, i + ROW_VALIDATION_CONCURRENCY);
     const results = await Promise.all(batch.map(validateImportRowImages));
     validated.push(...results);
+    onProgress?.(validated.length, rows.length);
   }
 
   return validated;

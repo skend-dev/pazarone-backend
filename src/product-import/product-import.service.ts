@@ -23,6 +23,7 @@ import { parseShopifyRows } from './parsers/shopify.parser';
 import {
   ImportExecutionResult,
   ImportPreviewResult,
+  ImportProgressEvent,
   ImportRowStatus,
   ParsedImportRow,
 } from './parsers/types';
@@ -32,10 +33,14 @@ import {
 } from '../products/entities/product.entity';
 import { UserType } from '../users/entities/user.entity';
 import {
+  addProductToExistingIndex,
   buildExistingProductIndex,
   ExistingProductIndex,
+  findExistingProductMatch,
+  resolveDuplicateRow,
 } from './parsers/duplicate-matcher';
-import { validateImportRowImages, validateImportRowsImages } from './parsers/import-image-validation';
+import { validateImportRowsImages } from './parsers/import-image-validation';
+import { ProductImportLockService } from './product-import-lock.service';
 
 const PREVIEW_SAMPLE_LIMIT = 25;
 const PREVIEW_ERROR_CAP = 120;
@@ -49,6 +54,7 @@ export class ProductImportService {
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
     private readonly productsService: ProductsService,
+    private readonly importLock: ProductImportLockService,
   ) {}
 
   async preview(
@@ -95,10 +101,39 @@ export class ProductImportService {
     filename: string,
     sellerId: string,
     options: ProductImportOptionsDto,
+    onProgress?: (event: ImportProgressEvent) => void,
+  ): Promise<ImportExecutionResult> {
+    this.importLock.acquire(sellerId);
+    try {
+      return await this.executeImport(
+        buffer,
+        filename,
+        sellerId,
+        options,
+        onProgress,
+      );
+    } finally {
+      this.importLock.release(sellerId);
+    }
+  }
+
+  private emitProgress(
+    onProgress: ((event: ImportProgressEvent) => void) | undefined,
+    event: ImportProgressEvent,
+  ): void {
+    onProgress?.(event);
+  }
+
+  private async executeImport(
+    buffer: Buffer,
+    filename: string,
+    sellerId: string,
+    options: ProductImportOptionsDto,
+    onProgress?: (event: ImportProgressEvent) => void,
   ): Promise<ImportExecutionResult> {
     await this.validateImportOptions(options);
     const normalized = normalizeImportFile(buffer, filename);
-    const existingProducts = await this.loadExistingProductIndex(sellerId);
+    let existingProducts = await this.loadExistingProductIndex(sellerId);
     const duplicateMode =
       options.duplicateMode === DuplicateImportMode.UPDATE ? 'update' : 'skip';
 
@@ -115,7 +150,17 @@ export class ProductImportService {
             duplicateMode,
           });
 
-    const validated = await validateImportRowsImages(parsed);
+    const validated = await validateImportRowsImages(parsed, (current, total) => {
+      this.emitProgress(onProgress, {
+        phase: 'validating',
+        current,
+        total,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        failed: 0,
+      });
+    });
     const categories = await this.loadCategoryMatchCandidates();
     const importable = validated.filter((r) =>
       ['ready', 'duplicate_update'].includes(r.status),
@@ -129,29 +174,50 @@ export class ProductImportService {
       rows: [],
     };
 
+    let processedImportable = 0;
     for (let i = 0; i < importable.length; i += IMPORT_BATCH_SIZE) {
       const batch = importable.slice(i, i + IMPORT_BATCH_SIZE);
       for (const row of batch) {
+        processedImportable++;
         try {
-          const validatedRow = await validateImportRowImages(row);
-          if (validatedRow.status === 'skipped_no_images') {
+          if (row.status === 'skipped_no_images' || !row.images?.length) {
             result.skipped++;
             result.rows.push({
-              line: validatedRow.line,
-              name: validatedRow.name || '',
-              sku: validatedRow.sku || null,
+              line: row.line,
+              name: row.name || '',
+              sku: row.sku || null,
               status: 'skipped',
-              message: validatedRow.message,
+              message: row.message || 'No reachable images',
             });
             continue;
           }
 
-          if (row.status === 'duplicate_update' && row.existingProductId) {
+          const liveDuplicate = row.name
+            ? findExistingProductMatch(
+                { sku: row.sku, name: row.name, images: row.images },
+                existingProducts,
+              )
+            : null;
+
+          if (liveDuplicate) {
+            const resolved = resolveDuplicateRow(duplicateMode, liveDuplicate);
+            if (resolved.status === 'duplicate_skip') {
+              result.skipped++;
+              result.rows.push({
+                line: row.line,
+                name: row.name || '',
+                sku: row.sku || null,
+                status: 'skipped',
+                message: resolved.message,
+              });
+              continue;
+            }
+
             const existing = await this.productsRepository.findOne({
-              where: { id: row.existingProductId, sellerId },
+              where: { id: resolved.existingProductId, sellerId },
             });
             if (existing) {
-              const dto = this.rowToUpdateDto(validatedRow, options, categories);
+              const dto = this.rowToUpdateDto(row, options, categories);
               await this.productsService.update(
                 existing.id,
                 sellerId,
@@ -166,6 +232,12 @@ export class ProductImportService {
                 externalImageIssueAt: null,
                 externalImageResolvedAt: null,
               });
+              addProductToExistingIndex(existingProducts, {
+                id: existing.id,
+                sku: row.sku || existing.sku,
+                name: row.name || existing.name,
+                images: row.images,
+              });
               result.updated++;
               result.rows.push({
                 line: row.line,
@@ -173,11 +245,66 @@ export class ProductImportService {
                 sku: row.sku || null,
                 status: 'updated',
               });
+              this.emitProgress(onProgress, {
+                phase: 'importing',
+                current: processedImportable,
+                total: importable.length,
+                created: result.created,
+                updated: result.updated,
+                skipped: result.skipped,
+                failed: result.failed,
+              });
               continue;
             }
           }
 
-          const dto = this.rowToCreateDto(validatedRow, options, categories);
+          if (row.status === 'duplicate_update' && row.existingProductId) {
+            const existing = await this.productsRepository.findOne({
+              where: { id: row.existingProductId, sellerId },
+            });
+            if (existing) {
+              const dto = this.rowToUpdateDto(row, options, categories);
+              await this.productsService.update(
+                existing.id,
+                sellerId,
+                dto,
+                UserType.ADMIN,
+              );
+              await this.productsRepository.update(existing.id, {
+                imageSource: ProductImageSource.EXTERNAL,
+                externalImageStatus: ProductExternalImageStatus.HEALTHY,
+                importSource: normalized.format,
+                brokenImageUrls: null,
+                externalImageIssueAt: null,
+                externalImageResolvedAt: null,
+              });
+              addProductToExistingIndex(existingProducts, {
+                id: existing.id,
+                sku: row.sku || existing.sku,
+                name: row.name || existing.name,
+                images: row.images,
+              });
+              result.updated++;
+              result.rows.push({
+                line: row.line,
+                name: row.name || '',
+                sku: row.sku || null,
+                status: 'updated',
+              });
+              this.emitProgress(onProgress, {
+                phase: 'importing',
+                current: processedImportable,
+                total: importable.length,
+                created: result.created,
+                updated: result.updated,
+                skipped: result.skipped,
+                failed: result.failed,
+              });
+              continue;
+            }
+          }
+
+          const dto = this.rowToCreateDto(row, options, categories);
           const product = await this.productsService.createFromImport(
             sellerId,
             dto,
@@ -187,6 +314,12 @@ export class ProductImportService {
               importSource: normalized.format,
             },
           );
+          addProductToExistingIndex(existingProducts, {
+            id: product.id,
+            sku: product.sku,
+            name: product.name,
+            images: product.images,
+          });
           result.created++;
           result.rows.push({
             line: row.line,
@@ -205,6 +338,16 @@ export class ProductImportService {
               err instanceof Error ? err.message : 'Import failed for this row',
           });
         }
+
+        this.emitProgress(onProgress, {
+          phase: 'importing',
+          current: processedImportable,
+          total: importable.length,
+          created: result.created,
+          updated: result.updated,
+          skipped: result.skipped,
+          failed: result.failed,
+        });
       }
     }
 
