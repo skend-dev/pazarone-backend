@@ -1,0 +1,13 @@
+export const IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+export const IMPORT_MAX_ROWS = 5000;
+export const IMPORT_MAX_COLUMNS = 150;
+export const IMPORT_MAX_CELL_LENGTH = 50_000;
+export const IMPORT_MAX_NAME_LENGTH = 500;
+export const IMPORT_MAX_SKU_LENGTH = 100;
+export const IMPORT_MAX_CATEGORY_LABEL_LENGTH = 255;
+export const IMPORT_MAX_IMAGE_URL_LENGTH = 2048;
+export const IMPORT_MAX_CATEGORY_MAPPINGS = 200;
+export const IMPORT_MAX_STOCK = 1_000_000;
+export const IMPORT_MAX_PRICE = 100_000_000;
+
+export const IMPORT_ALLOWED_EXTENSIONS = new Set(['.csv']);

@@ -54,6 +54,25 @@ export class Broadcast {
   @Column({ default: false })
   isAutomated: boolean; // true = sent by scheduler (flash deals), false = manual admin broadcast
 
+  /** male | female — stored so resends use the same audience filter */
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  audienceGender: string | null;
+
+  /** When this broadcast is a follow-up send, points to the prior broadcast */
+  @Column('uuid', { nullable: true })
+  sourceBroadcastId: string | null;
+
+  @ManyToOne(() => Broadcast, { nullable: true })
+  @JoinColumn({ name: 'sourceBroadcastId' })
+  sourceBroadcast: Broadcast | null;
+
+  /**
+   * Groups original send + all "send to remaining" follow-ups.
+   * Equals own id on the first send in a chain.
+   */
+  @Column('uuid', { nullable: true })
+  campaignRootId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

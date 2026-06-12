@@ -10,6 +10,7 @@ import { AffiliatePaymentMethod } from '../affiliate/entities/affiliate-payment-
 import { SellerSettings } from '../seller/entities/seller-settings.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Broadcast } from './entities/broadcast.entity';
+import { BroadcastRecipient } from './entities/broadcast-recipient.entity';
 import { MarketingContact } from '../marketing/entities/marketing-contact.entity';
 import { AdminUsersService } from './admin-users.service';
 import { AdminUsersController } from './admin-users.controller';
@@ -56,6 +57,7 @@ import { MarketingModule } from '../marketing/marketing.module';
       AffiliatePaymentMethod,
       SellerSettings,
       Broadcast,
+      BroadcastRecipient,
       MarketingContact,
     ]),
   ],

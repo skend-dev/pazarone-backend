@@ -7,7 +7,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { QueryFailedError } from 'typeorm';
-import { Product, ProductStatus } from './entities/product.entity';
+import {
+  Product,
+  ProductExternalImageStatus,
+  ProductImageSource,
+  ProductStatus,
+} from './entities/product.entity';
 import { ProductVariantAttribute } from './entities/product-variant-attribute.entity';
 import { ProductVariantValue } from './entities/product-variant-value.entity';
 import { ProductVariant } from './entities/product-variant.entity';
@@ -402,6 +407,43 @@ export class ProductsService {
         'variants',
       ],
     });
+  }
+
+  async createFromImport(
+    sellerId: string,
+    createProductDto: CreateProductDto,
+    importMeta: {
+      imageSource: ProductImageSource;
+      externalImageStatus: ProductExternalImageStatus;
+      importSource: string;
+    },
+  ): Promise<Product> {
+    const product = await this.create(sellerId, createProductDto);
+    await this.productsRepository.update(product.id, {
+      imageSource: importMeta.imageSource,
+      externalImageStatus: importMeta.externalImageStatus,
+      importSource: importMeta.importSource,
+    });
+    return this.productsRepository.findOneOrFail({
+      where: { id: product.id },
+      relations: [
+        'category',
+        'variantAttributes',
+        'variantAttributes.values',
+        'variants',
+      ],
+    });
+  }
+
+  /** Only Cloudinary-hosted URLs should be deleted from Cloudinary storage. */
+  private urlsForCloudinaryDeletion(
+    product: Pick<Product, 'imageSource'>,
+    urls: string[],
+  ): string[] {
+    if (product.imageSource === ProductImageSource.EXTERNAL) {
+      return [];
+    }
+    return urls;
   }
 
   async findAll(
@@ -831,8 +873,9 @@ export class ProductsService {
         !this.areImageListsEqual(oldImages, newImages);
 
       // Find images that are being removed (old images not in new array)
-      const imagesToDelete = oldImages.filter(
-        (oldUrl) => !newImages.includes(oldUrl),
+      const imagesToDelete = this.urlsForCloudinaryDeletion(
+        product,
+        oldImages.filter((oldUrl) => !newImages.includes(oldUrl)),
       );
 
       // Delete removed images from Cloudinary
@@ -982,10 +1025,15 @@ export class ProductsService {
         }
       }
       
-      // Delete all images from Cloudinary
-      if (allImagesToDelete.length > 0) {
+      const cloudinaryDeletes = this.urlsForCloudinaryDeletion(
+        product,
+        allImagesToDelete,
+      );
+
+      // Delete uploaded images from Cloudinary only
+      if (cloudinaryDeletes.length > 0) {
         try {
-          const publicIds = allImagesToDelete
+          const publicIds = cloudinaryDeletes
             .map((url) => {
               const publicId = this.cloudinaryService.extractPublicIdFromUrl(url);
               if (!publicId) {
@@ -997,13 +1045,8 @@ export class ProductsService {
 
           if (publicIds.length > 0) {
             await this.cloudinaryService.deleteMultipleImages(publicIds);
-          } else {
-            console.warn(
-              `No valid public IDs extracted from ${allImagesToDelete.length} image URL(s) for product ${id}`,
-            );
           }
         } catch (error) {
-          // Log error but don't fail product deletion if image deletion fails
           console.error(`Failed to delete images for product ${id}:`, error);
         }
       }
@@ -1028,12 +1071,11 @@ export class ProductsService {
       throw new BadRequestException('Images must be an array');
     }
     
-    // Find images that are being removed (old images not in new array)
-    const imagesToDelete = oldImages.filter(
-      (oldUrl) => !images.includes(oldUrl),
+    const imagesToDelete = this.urlsForCloudinaryDeletion(
+      product,
+      oldImages.filter((oldUrl) => !images.includes(oldUrl)),
     );
 
-    // Delete removed images from Cloudinary
     if (imagesToDelete.length > 0) {
       try {
         const publicIds = imagesToDelete
@@ -1044,7 +1086,6 @@ export class ProductsService {
           await this.cloudinaryService.deleteMultipleImages(publicIds);
         }
       } catch (error) {
-        // Log error but don't fail image update if deletion fails
         console.error(`Failed to delete old images for product ${id}:`, error);
       }
     }

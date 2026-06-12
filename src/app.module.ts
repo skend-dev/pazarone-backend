@@ -33,6 +33,7 @@ import { PlatformModule } from './platform/platform.module';
 import { PlatformSettings } from './platform/entities/platform-settings.entity';
 import { AdminModule } from './admin/admin.module';
 import { Broadcast } from './admin/entities/broadcast.entity';
+import { BroadcastRecipient } from './admin/entities/broadcast-recipient.entity';
 import { NotificationsModule } from './notifications/notifications.module';
 import { Notification } from './notifications/entities/notification.entity';
 import { EmailVerification } from './auth/entities/email-verification.entity';
@@ -52,6 +53,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { UserIdentity } from './users/entities/user-identity.entity';
 import { MarketingModule } from './marketing/marketing.module';
+import { ProductImportModule } from './product-import/product-import.module';
 import { MarketingContact } from './marketing/entities/marketing-contact.entity';
 import { MarketingInfobipDeliveryEvent } from './marketing/entities/marketing-infobip-delivery-event.entity';
 import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-infobip-inbound-message.entity';
@@ -106,6 +108,7 @@ import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-i
           Invoice,
           InvoiceItem,
           Broadcast,
+          BroadcastRecipient,
           MarketingContact,
           MarketingInfobipDeliveryEvent,
           MarketingInfobipInboundMessage,
@@ -148,6 +151,7 @@ import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-i
     InvoiceModule,
     PromotionModule,
     MarketingModule,
+    ProductImportModule,
   ],
   controllers: [AppController],
   providers: [

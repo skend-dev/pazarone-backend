@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Post,
   Delete,
   Param,
   Query,
@@ -20,6 +21,8 @@ import {
 import { AdminProductsService } from './admin-products.service';
 import { AdminQueryDto } from './dto/admin-query.dto';
 import { RejectProductDto } from './dto/reject-product.dto';
+import { BulkAdminProductsDto } from './dto/bulk-admin-products.dto';
+import { UpdateProductStatusDto } from './dto/update-product-status.dto';
 import { UpdateProductDto } from '../products/dto/update-product.dto';
 import { ProductStatus } from '../products/entities/product.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -56,6 +59,18 @@ export class AdminProductsController {
     return this.adminProductsService.findAll(query);
   }
 
+  @Post('bulk')
+  @ApiOperation({
+    summary: 'Bulk update products',
+    description:
+      'Approve, reject, activate, or deactivate up to 100 products at once (admin only)',
+  })
+  @ApiBody({ type: BulkAdminProductsDto })
+  @ApiResponse({ status: 200, description: 'Bulk action completed' })
+  bulkAction(@Body() dto: BulkAdminProductsDto) {
+    return this.adminProductsService.bulkAction(dto);
+  }
+
   @Put(':id/approve')
   @ApiOperation({
     summary: 'Approve a product',
@@ -88,6 +103,27 @@ export class AdminProductsController {
     @Body() rejectProductDto: RejectProductDto,
   ) {
     return this.adminProductsService.rejectProduct(id, rejectProductDto.message);
+  }
+
+  @Put(':id/status')
+  @ApiOperation({
+    summary: 'Activate or deactivate a product',
+    description: 'Toggle product active/inactive status (admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiBody({ type: UpdateProductStatusDto })
+  @ApiResponse({ status: 200, description: 'Product status updated successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin access required' })
+  updateStatus(
+    @Param('id') id: string,
+    @Body() updateProductStatusDto: UpdateProductStatusDto,
+  ) {
+    return this.adminProductsService.updateStatus(
+      id,
+      updateProductStatusDto.active,
+    );
   }
 
   @Put(':id')

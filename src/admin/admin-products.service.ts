@@ -18,6 +18,24 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { EmailService } from '../auth/services/email.service';
 import { User } from '../users/entities/user.entity';
+import {
+  BulkAdminProductAction,
+  BulkAdminProductsDto,
+} from './dto/bulk-admin-products.dto';
+
+export interface BulkAdminProductResultItem {
+  productId: string;
+  status: 'success' | 'skipped' | 'failed';
+  message?: string;
+}
+
+export interface BulkAdminProductsResult {
+  action: BulkAdminProductAction;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  results: BulkAdminProductResultItem[];
+}
 
 @Injectable()
 export class AdminProductsService {
@@ -258,6 +276,25 @@ export class AdminProductsService {
     return updatedProduct;
   }
 
+  async updateStatus(productId: string, active: boolean): Promise<Product> {
+    const product = await this.productsRepository.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    if (active) {
+      product.status =
+        product.stock > 0 ? ProductStatus.ACTIVE : ProductStatus.OUT_OF_STOCK;
+    } else {
+      product.status = ProductStatus.INACTIVE;
+    }
+
+    return this.productsRepository.save(product);
+  }
+
   async remove(id: string): Promise<{ success: boolean; message: string }> {
     const product = await this.productsRepository.findOne({
       where: { id },
@@ -305,6 +342,146 @@ export class AdminProductsService {
       updateProductDto,
       UserType.ADMIN,
     );
+  }
+
+  async bulkAction(dto: BulkAdminProductsDto): Promise<BulkAdminProductsResult> {
+    if (
+      dto.action === BulkAdminProductAction.REJECT &&
+      !dto.rejectionMessage?.trim()
+    ) {
+      throw new BadRequestException(
+        'rejectionMessage is required when action is reject',
+      );
+    }
+
+    const results: BulkAdminProductResultItem[] = [];
+
+    for (const productId of dto.productIds) {
+      try {
+        switch (dto.action) {
+          case BulkAdminProductAction.APPROVE: {
+            const product = await this.productsRepository.findOne({
+              where: { id: productId },
+            });
+            if (!product) {
+              results.push({
+                productId,
+                status: 'failed',
+                message: 'Product not found',
+              });
+              break;
+            }
+            if (product.approved) {
+              results.push({
+                productId,
+                status: 'skipped',
+                message: 'Already approved',
+              });
+              break;
+            }
+            await this.approveProduct(productId);
+            results.push({ productId, status: 'success' });
+            break;
+          }
+          case BulkAdminProductAction.REJECT: {
+            const product = await this.productsRepository.findOne({
+              where: { id: productId },
+            });
+            if (!product) {
+              results.push({
+                productId,
+                status: 'failed',
+                message: 'Product not found',
+              });
+              break;
+            }
+            if (product.approved) {
+              results.push({
+                productId,
+                status: 'skipped',
+                message: 'Cannot reject an approved product',
+              });
+              break;
+            }
+            await this.rejectProduct(
+              productId,
+              dto.rejectionMessage!.trim(),
+            );
+            results.push({ productId, status: 'success' });
+            break;
+          }
+          case BulkAdminProductAction.ACTIVATE: {
+            const product = await this.productsRepository.findOne({
+              where: { id: productId },
+            });
+            if (!product) {
+              results.push({
+                productId,
+                status: 'failed',
+                message: 'Product not found',
+              });
+              break;
+            }
+            if (product.status !== ProductStatus.INACTIVE) {
+              results.push({
+                productId,
+                status: 'skipped',
+                message: 'Product is already active or out of stock',
+              });
+              break;
+            }
+            await this.updateStatus(productId, true);
+            results.push({ productId, status: 'success' });
+            break;
+          }
+          case BulkAdminProductAction.DEACTIVATE: {
+            const product = await this.productsRepository.findOne({
+              where: { id: productId },
+            });
+            if (!product) {
+              results.push({
+                productId,
+                status: 'failed',
+                message: 'Product not found',
+              });
+              break;
+            }
+            if (product.status === ProductStatus.INACTIVE) {
+              results.push({
+                productId,
+                status: 'skipped',
+                message: 'Already inactive',
+              });
+              break;
+            }
+            await this.updateStatus(productId, false);
+            results.push({ productId, status: 'success' });
+            break;
+          }
+          default:
+            results.push({
+              productId,
+              status: 'failed',
+              message: 'Unknown action',
+            });
+        }
+      } catch (err) {
+        const message =
+          err instanceof BadRequestException ||
+          err instanceof NotFoundException
+            ? (err as BadRequestException).message
+            : 'Update failed';
+        results.push({ productId, status: 'failed', message });
+      }
+    }
+
+    return {
+      action: dto.action,
+      succeeded: results.filter((r) => r.status === 'success').length,
+      skipped: results.filter((r) => r.status === 'skipped').length,
+      failed: results.filter((r) => r.status === 'failed').length,
+      results,
+    };
   }
 
   async getStatistics() {
