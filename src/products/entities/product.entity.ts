@@ -21,6 +21,23 @@ export enum ProductStatus {
   INACTIVE = 'inactive',
 }
 
+export enum ProductImageSource {
+  UPLOADED = 'uploaded',
+  EXTERNAL = 'external',
+}
+
+export enum ProductExternalImageStatus {
+  HEALTHY = 'healthy',
+  BROKEN = 'broken',
+  RESOLVED = 'resolved',
+}
+
+export interface BrokenImageUrlEntry {
+  url: string;
+  checkedAt: string;
+  httpStatus: number | null;
+}
+
 @Entity('products')
 @Index(['sellerId'])
 @Index(['categoryId'])
@@ -142,4 +159,30 @@ export class Product {
 
   @Column('decimal', { precision: 10, scale: 2, nullable: true })
   shippingPriceKosovo: number | null; // EUR - only when shippingType = 'paid'
+
+  @Column({
+    type: 'enum',
+    enum: ProductImageSource,
+    default: ProductImageSource.UPLOADED,
+  })
+  imageSource: ProductImageSource;
+
+  @Column({
+    type: 'enum',
+    enum: ProductExternalImageStatus,
+    nullable: true,
+  })
+  externalImageStatus: ProductExternalImageStatus | null;
+
+  @Column('jsonb', { nullable: true })
+  brokenImageUrls: BrokenImageUrlEntry[] | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  externalImageIssueAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  externalImageResolvedAt: Date | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  importSource: string | null;
 }

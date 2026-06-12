@@ -558,8 +558,18 @@ You received this email because your password was changed on PazarOne.`,
       imageUrl: string | null;
       productUrl: string;
     }>,
-  ): Promise<{ sent: number; failed: number }> {
-    if (!recipients.length) return { sent: 0, failed: 0 };
+  ): Promise<{
+    sent: number;
+    failed: number;
+    results: Array<{
+      email: string;
+      name: string;
+      status: 'sent' | 'failed';
+    }>;
+  }> {
+    if (!recipients.length) {
+      return { sent: 0, failed: 0, results: [] };
+    }
 
     const NAME_TAG = '-recipientName-';
     const UNSUB_TAG = '-unsubEmail-';
@@ -585,6 +595,11 @@ You received this email because your password was changed on PazarOne.`,
 
     let sent = 0;
     let failed = 0;
+    const results: Array<{
+      email: string;
+      name: string;
+      status: 'sent' | 'failed';
+    }> = [];
     const totalChunks = Math.ceil(recipients.length / BATCH_SIZE);
 
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
@@ -615,11 +630,25 @@ You received this email because your password was changed on PazarOne.`,
       try {
         await sgMail.send(msg);
         sent += chunk.length;
+        for (const r of chunk) {
+          results.push({
+            email: r.email,
+            name: r.name || 'there',
+            status: 'sent',
+          });
+        }
         this.logger.log(
           `Broadcast batch ${chunkNum}/${totalChunks}: sent ${chunk.length} emails`,
         );
       } catch (error) {
         failed += chunk.length;
+        for (const r of chunk) {
+          results.push({
+            email: r.email,
+            name: r.name || 'there',
+            status: 'failed',
+          });
+        }
         this.logger.error(
           `Broadcast batch ${chunkNum}/${totalChunks}: failed for ${chunk.length} emails`,
           error,
@@ -627,7 +656,7 @@ You received this email because your password was changed on PazarOne.`,
       }
     }
 
-    return { sent, failed };
+    return { sent, failed, results };
   }
 
   /**

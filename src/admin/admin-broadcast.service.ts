@@ -20,6 +20,7 @@ import {
   UserRoleTargetAudienceType,
 } from './dto/create-broadcast.dto';
 import { Broadcast } from './entities/broadcast.entity';
+import { BroadcastRecipient } from './entities/broadcast-recipient.entity';
 import { MarketingContact } from '../marketing/entities/marketing-contact.entity';
 import { normalizeMarketingGenderInput } from '../marketing/utils/marketing-gender';
 
@@ -28,6 +29,12 @@ const TARGET_TO_USER_TYPE: Record<UserRoleTargetAudienceType, UserType> = {
   seller: UserType.SELLER,
   customer: UserType.CUSTOMER,
 };
+
+type JobRecipient =
+  | { kind: 'user'; user: User }
+  | { kind: 'marketing'; email: string; name: string | null };
+
+const RECIPIENT_INSERT_BATCH = 200;
 
 @Injectable()
 export class AdminBroadcastService implements OnModuleInit {
@@ -44,6 +51,8 @@ export class AdminBroadcastService implements OnModuleInit {
     private readonly affiliateReferralRepository: Repository<AffiliateReferral>,
     @InjectRepository(Broadcast)
     private readonly broadcastRepository: Repository<Broadcast>,
+    @InjectRepository(BroadcastRecipient)
+    private readonly broadcastRecipientRepository: Repository<BroadcastRecipient>,
     @InjectRepository(MarketingContact)
     private readonly marketingContactRepository: Repository<MarketingContact>,
     private readonly notificationsService: NotificationsService,
@@ -346,6 +355,9 @@ export class AdminBroadcastService implements OnModuleInit {
         totalRecipients: b.totalRecipients ?? 0,
         status: b.status ?? 'done',
         isAutomated: b.isAutomated ?? false,
+        sourceBroadcastId: b.sourceBroadcastId ?? null,
+        campaignRootId: b.campaignRootId ?? b.id,
+        audienceGender: b.audienceGender ?? null,
         createdAt: b.createdAt.toISOString(),
         createdBy: b.createdBy
           ? {
@@ -404,6 +416,101 @@ export class AdminBroadcastService implements OnModuleInit {
       out.push({ email: raw, name: r.name });
     }
     return out;
+  }
+
+  private getRecipientEmail(rec: JobRecipient): string | null {
+    if (rec.kind === 'user') {
+      const email = rec.user.email?.trim();
+      return email || null;
+    }
+    const email = rec.email?.trim();
+    return email || null;
+  }
+
+  private getCampaignRootId(broadcast: Broadcast): string {
+    return broadcast.campaignRootId ?? broadcast.id;
+  }
+
+  /** Emails already sent successfully across the whole campaign chain. */
+  private async getCampaignSentEmails(campaignRootId: string): Promise<Set<string>> {
+    const rows = await this.broadcastRecipientRepository
+      .createQueryBuilder('br')
+      .innerJoin('br.broadcast', 'b')
+      .select('DISTINCT br.emailNormalized', 'emailNormalized')
+      .where('COALESCE(b.campaignRootId, b.id) = :rootId', { rootId: campaignRootId })
+      .andWhere('br.channel = :channel', { channel: 'email' })
+      .andWhere('br.status = :status', { status: 'sent' })
+      .getRawMany<{ emailNormalized: string }>();
+
+    return new Set(rows.map((r) => r.emailNormalized));
+  }
+
+  private async resolveRecipientsFromConfig(config: {
+    targetAudience: string[];
+    deliveryMethod: string;
+    audienceGender?: string | null;
+  }): Promise<JobRecipient[]> {
+    const roleTargets = config.targetAudience.filter(
+      (t): t is UserRoleTargetAudienceType =>
+        t === 'affiliate' || t === 'seller' || t === 'customer',
+    );
+    const includeMarketingAudience =
+      config.targetAudience.includes('marketing_audience');
+    const audienceGender = config.audienceGender?.trim() || undefined;
+    const sendEmail =
+      config.deliveryMethod === 'email' || config.deliveryMethod === 'both';
+
+    const users = await this.getUserRecipientsByTypes(roleTargets, audienceGender);
+    const userEmailsNorm = new Set(
+      users
+        .map((u) => u.email?.trim().toLowerCase())
+        .filter((e): e is string => !!e),
+    );
+
+    let marketingRows: Array<{ email: string; name: string | null }> = [];
+    if (includeMarketingAudience && sendEmail) {
+      marketingRows = await this.loadMarketingEmailRecipients(
+        userEmailsNorm,
+        audienceGender,
+      );
+    }
+
+    return [
+      ...users.map((user) => ({ kind: 'user' as const, user })),
+      ...marketingRows.map((m) => ({
+        kind: 'marketing' as const,
+        email: m.email,
+        name: m.name,
+      })),
+    ];
+  }
+
+  private async recordRecipients(
+    broadcastId: string,
+    rows: Array<{
+      email: string;
+      name?: string | null;
+      userId?: string | null;
+      channel: 'email' | 'notification';
+      status: 'sent' | 'failed';
+    }>,
+  ): Promise<void> {
+    if (!rows.length) return;
+
+    for (let i = 0; i < rows.length; i += RECIPIENT_INSERT_BATCH) {
+      const batch = rows.slice(i, i + RECIPIENT_INSERT_BATCH);
+      await this.broadcastRecipientRepository.insert(
+        batch.map((r) => ({
+          broadcastId,
+          email: r.email,
+          emailNormalized: r.email.trim().toLowerCase(),
+          name: r.name ?? null,
+          userId: r.userId ?? null,
+          channel: r.channel,
+          status: r.status,
+        })),
+      );
+    }
   }
 
   /**
@@ -468,49 +575,14 @@ export class AdminBroadcastService implements OnModuleInit {
   }> {
     this.validateBroadcastPayload(dto);
 
-    const roleTargets = dto.targetAudience.filter(
-      (t): t is UserRoleTargetAudienceType =>
-        t === 'affiliate' || t === 'seller' || t === 'customer',
-    );
-    const includeMarketingAudience =
-      dto.targetAudience.includes('marketing_audience');
-
     const audienceGender =
       dto.audienceGender?.trim() ? dto.audienceGender.trim() : undefined;
 
-    const users = await this.getUserRecipientsByTypes(
-      roleTargets,
+    const jobRecipients = await this.resolveRecipientsFromConfig({
+      targetAudience: dto.targetAudience,
+      deliveryMethod: dto.deliveryMethod,
       audienceGender,
-    );
-    const sendEmail =
-      dto.deliveryMethod === 'email' || dto.deliveryMethod === 'both';
-
-    const userEmailsNorm = new Set(
-      users
-        .map((u) => u.email?.trim().toLowerCase())
-        .filter((e): e is string => !!e),
-    );
-
-    let marketingRows: Array<{ email: string; name: string | null }> = [];
-    if (includeMarketingAudience && sendEmail) {
-      marketingRows = await this.loadMarketingEmailRecipients(
-        userEmailsNorm,
-        audienceGender,
-      );
-    }
-
-    type JobRecipient =
-      | { kind: 'user'; user: User }
-      | { kind: 'marketing'; email: string; name: string | null };
-
-    const jobRecipients: JobRecipient[] = [
-      ...users.map((user) => ({ kind: 'user' as const, user })),
-      ...marketingRows.map((m) => ({
-        kind: 'marketing' as const,
-        email: m.email,
-        name: m.name,
-      })),
-    ];
+    });
 
     if (jobRecipients.length === 0) {
       throw new BadRequestException(
@@ -518,12 +590,274 @@ export class AdminBroadcastService implements OnModuleInit {
       );
     }
 
-    // Apply optional cap — slice before saving totalRecipients so the record reflects reality
-    const limit = dto.recipientLimit && dto.recipientLimit > 0 ? dto.recipientLimit : null;
-    const finalRecipients = limit ? jobRecipients.slice(0, limit) : jobRecipients;
-    const totalRecipients = finalRecipients.length;
+    const limit =
+      dto.recipientLimit && dto.recipientLimit > 0 ? dto.recipientLimit : null;
+    const finalRecipients = limit
+      ? jobRecipients.slice(0, limit)
+      : jobRecipients;
 
-    // Save the record immediately so we have an ID to return
+    return this.startBroadcastJob({
+      dto,
+      createdById,
+      recipients: finalRecipients,
+      audienceGender: audienceGender ?? null,
+    });
+  }
+
+  /**
+   * Send the same announcement to audience members who have not yet received
+   * an email in this campaign (original send + prior follow-ups).
+   */
+  async resendRemaining(
+    sourceBroadcastId: string,
+    createdById: string,
+    recipientLimit?: number,
+  ): Promise<{
+    broadcastId: string;
+    status: string;
+    totalRecipients: number;
+    message: string;
+  }> {
+    const source = await this.broadcastRepository.findOne({
+      where: { id: sourceBroadcastId },
+    });
+    if (!source) throw new NotFoundException('Broadcast not found');
+    if (source.status === 'processing') {
+      throw new BadRequestException(
+        'Cannot resend while the source broadcast is still processing.',
+      );
+    }
+    if (
+      source.deliveryMethod !== 'email' &&
+      source.deliveryMethod !== 'both'
+    ) {
+      throw new BadRequestException(
+        'Resend to remaining is only available for email broadcasts.',
+      );
+    }
+
+    const campaignRootId = this.getCampaignRootId(source);
+    const alreadySent = await this.getCampaignSentEmails(campaignRootId);
+
+    const campaignRecipientCount = await this.broadcastRecipientRepository
+      .createQueryBuilder('br')
+      .innerJoin('br.broadcast', 'b')
+      .where('COALESCE(b.campaignRootId, b.id) = :rootId', {
+        rootId: campaignRootId,
+      })
+      .andWhere('br.channel = :channel', { channel: 'email' })
+      .getCount();
+
+    if (source.emailSent > 0 && campaignRecipientCount === 0) {
+      throw new BadRequestException(
+        'Recipient tracking is not available for this send (sent before tracking was enabled). Duplicate the announcement to start a new tracked campaign.',
+      );
+    }
+
+    const allRecipients = await this.resolveRecipientsFromConfig({
+      targetAudience: source.targetAudience,
+      deliveryMethod: source.deliveryMethod,
+      audienceGender: source.audienceGender,
+    });
+
+    const remaining = allRecipients.filter((rec) => {
+      const email = this.getRecipientEmail(rec);
+      return email && !alreadySent.has(email.toLowerCase());
+    });
+
+    if (remaining.length === 0) {
+      throw new BadRequestException(
+        'Everyone in this audience has already received this campaign by email.',
+      );
+    }
+
+    const limit =
+      recipientLimit && recipientLimit > 0 ? recipientLimit : null;
+    const finalRecipients = limit
+      ? remaining.slice(0, limit)
+      : remaining;
+
+    const dto: CreateBroadcastDto = {
+      broadcastType: source.broadcastType as CreateBroadcastDto['broadcastType'],
+      title: source.title,
+      message: source.message,
+      targetAudience: source.targetAudience as CreateBroadcastDto['targetAudience'],
+      deliveryMethod: 'email',
+      featuredProductIds: source.featuredProductIds ?? undefined,
+      audienceGender:
+        source.audienceGender === 'male' || source.audienceGender === 'female'
+          ? source.audienceGender
+          : undefined,
+    };
+
+    return this.startBroadcastJob({
+      dto,
+      createdById,
+      recipients: finalRecipients,
+      audienceGender: source.audienceGender,
+      sourceBroadcastId: source.id,
+      campaignRootId,
+    });
+  }
+
+  async getRecipients(
+    broadcastId: string,
+    page: number = 1,
+    limit: number = 50,
+    channel?: 'email' | 'notification',
+  ): Promise<{
+    recipients: Array<{
+      id: string;
+      email: string;
+      name: string | null;
+      channel: 'email' | 'notification';
+      status: 'sent' | 'failed';
+      sentAt: string;
+    }>;
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    const broadcast = await this.broadcastRepository.findOne({
+      where: { id: broadcastId },
+    });
+    if (!broadcast) throw new NotFoundException('Broadcast not found');
+
+    const skip = (page - 1) * limit;
+    const qb = this.broadcastRecipientRepository
+      .createQueryBuilder('r')
+      .where('r.broadcastId = :broadcastId', { broadcastId })
+      .orderBy('r.sentAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (channel) {
+      qb.andWhere('r.channel = :channel', { channel });
+    }
+
+    const [rows, total] = await qb.getManyAndCount();
+
+    return {
+      recipients: rows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        channel: r.channel,
+        status: r.status,
+        sentAt: r.sentAt.toISOString(),
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getDeliveryStats(broadcastId: string): Promise<{
+    broadcastId: string;
+    campaignRootId: string;
+    emailsSent: number;
+    emailsFailed: number;
+    notificationsSent: number;
+    totalAudienceWithEmail: number;
+    remainingEmailRecipients: number;
+    canResendRemaining: boolean;
+    hasLegacySendWithoutTracking: boolean;
+  }> {
+    const broadcast = await this.broadcastRepository.findOne({
+      where: { id: broadcastId },
+    });
+    if (!broadcast) throw new NotFoundException('Broadcast not found');
+
+    const campaignRootId = this.getCampaignRootId(broadcast);
+    const alreadySent = await this.getCampaignSentEmails(campaignRootId);
+
+    const allRecipients = await this.resolveRecipientsFromConfig({
+      targetAudience: broadcast.targetAudience,
+      deliveryMethod: broadcast.deliveryMethod,
+      audienceGender: broadcast.audienceGender,
+    });
+
+    const totalAudienceWithEmail = allRecipients.filter((rec) =>
+      !!this.getRecipientEmail(rec),
+    ).length;
+    const remainingEmailRecipients = allRecipients.filter((rec) => {
+      const email = this.getRecipientEmail(rec);
+      return email && !alreadySent.has(email.toLowerCase());
+    }).length;
+
+    const [emailsSent, emailsFailed, notificationsSent, campaignEmailRecords] =
+      await Promise.all([
+      this.broadcastRecipientRepository.count({
+        where: { broadcastId, channel: 'email', status: 'sent' },
+      }),
+      this.broadcastRecipientRepository.count({
+        where: { broadcastId, channel: 'email', status: 'failed' },
+      }),
+      this.broadcastRecipientRepository.count({
+        where: { broadcastId, channel: 'notification', status: 'sent' },
+      }),
+      this.broadcastRecipientRepository
+        .createQueryBuilder('br')
+        .innerJoin('br.broadcast', 'b')
+        .where('COALESCE(b.campaignRootId, b.id) = :rootId', {
+          rootId: campaignRootId,
+        })
+        .andWhere('br.channel = :channel', { channel: 'email' })
+        .getCount(),
+    ]);
+
+    const hasLegacySendWithoutTracking =
+      (broadcast.emailSent ?? 0) > 0 && campaignEmailRecords === 0;
+
+    const canResendRemaining =
+      broadcast.status !== 'processing' &&
+      (broadcast.deliveryMethod === 'email' ||
+        broadcast.deliveryMethod === 'both') &&
+      remainingEmailRecipients > 0 &&
+      !hasLegacySendWithoutTracking;
+
+    return {
+      broadcastId,
+      campaignRootId,
+      emailsSent,
+      emailsFailed,
+      notificationsSent,
+      totalAudienceWithEmail,
+      remainingEmailRecipients,
+      canResendRemaining,
+      hasLegacySendWithoutTracking,
+    };
+  }
+
+  private async startBroadcastJob(options: {
+    dto: CreateBroadcastDto;
+    createdById: string;
+    recipients: JobRecipient[];
+    audienceGender: string | null;
+    sourceBroadcastId?: string;
+    campaignRootId?: string;
+  }): Promise<{
+    broadcastId: string;
+    status: string;
+    totalRecipients: number;
+    message: string;
+  }> {
+    const {
+      dto,
+      createdById,
+      recipients,
+      audienceGender,
+      sourceBroadcastId,
+      campaignRootId,
+    } = options;
+    const totalRecipients = recipients.length;
+
     const record = await this.broadcastRepository.save(
       this.broadcastRepository.create({
         title: dto.title,
@@ -532,6 +866,9 @@ export class AdminBroadcastService implements OnModuleInit {
         targetAudience: dto.targetAudience,
         deliveryMethod: dto.deliveryMethod,
         featuredProductIds: dto.featuredProductIds ?? null,
+        audienceGender,
+        sourceBroadcastId: sourceBroadcastId ?? null,
+        campaignRootId: campaignRootId ?? null,
         emailSent: 0,
         notificationsCreated: 0,
         totalRecipients,
@@ -541,7 +878,13 @@ export class AdminBroadcastService implements OnModuleInit {
       }),
     );
 
-    // Register in-memory tracker
+    const rootId = campaignRootId ?? record.id;
+    if (!record.campaignRootId) {
+      await this.broadcastRepository.update(record.id, {
+        campaignRootId: rootId,
+      });
+    }
+
     this.broadcastJobs.set(record.id, {
       emailSent: 0,
       notificationsCreated: 0,
@@ -550,8 +893,7 @@ export class AdminBroadcastService implements OnModuleInit {
       status: 'processing',
     });
 
-    // Fire-and-forget: runs after the HTTP response is sent
-    this.runBroadcastJob(record.id, dto, finalRecipients).catch((err) => {
+    this.runBroadcastJob(record.id, dto, recipients).catch((err) => {
       this.logger.error(`Broadcast job ${record.id} crashed:`, err);
     });
 
@@ -559,7 +901,9 @@ export class AdminBroadcastService implements OnModuleInit {
       broadcastId: record.id,
       status: 'processing',
       totalRecipients,
-      message: 'Broadcast started — sending in the background',
+      message: sourceBroadcastId
+        ? 'Follow-up send started — sending to remaining recipients in the background'
+        : 'Broadcast started — sending in the background',
     };
   }
 
@@ -619,10 +963,7 @@ export class AdminBroadcastService implements OnModuleInit {
   private async runBroadcastJob(
     broadcastId: string,
     dto: CreateBroadcastDto,
-    recipients: Array<
-      | { kind: 'user'; user: User }
-      | { kind: 'marketing'; email: string; name: string | null }
-    >,
+    recipients: JobRecipient[],
   ): Promise<void> {
     const job = this.broadcastJobs.get(broadcastId);
     if (!job) return;
@@ -648,9 +989,18 @@ export class AdminBroadcastService implements OnModuleInit {
     try {
       // ── Notifications (sequential, fast DB writes) ──────────────────────
       if (sendNotification) {
+        const notificationRecords: Array<{
+          email: string;
+          name?: string | null;
+          userId?: string | null;
+          channel: 'email' | 'notification';
+          status: 'sent' | 'failed';
+        }> = [];
+
         for (const rec of recipients) {
           if (rec.kind !== 'user') continue;
           const user = rec.user;
+          const userEmail = user.email?.trim();
           try {
             const metadata: Record<string, unknown> = {};
             if (dto.featuredProductIds?.length) {
@@ -670,13 +1020,33 @@ export class AdminBroadcastService implements OnModuleInit {
               user.id,
               notification,
             );
+            if (userEmail) {
+              notificationRecords.push({
+                email: userEmail,
+                name: user.name,
+                userId: user.id,
+                channel: 'notification',
+                status: 'sent',
+              });
+            }
           } catch (err) {
             this.logger.warn(
               `Broadcast ${broadcastId}: notification failed for user ${user.id}:`,
               err,
             );
+            if (userEmail) {
+              notificationRecords.push({
+                email: userEmail,
+                name: user.name,
+                userId: user.id,
+                channel: 'notification',
+                status: 'failed',
+              });
+            }
           }
         }
+
+        await this.recordRecipients(broadcastId, notificationRecords);
         await this.broadcastRepository.update(broadcastId, {
           notificationsCreated: job.notificationsCreated,
         });
@@ -718,14 +1088,40 @@ export class AdminBroadcastService implements OnModuleInit {
                   dto.message,
                   productPayload,
                 );
+                return user;
               }),
             );
 
-            for (const result of results) {
+            const emailRecords: Array<{
+              email: string;
+              name?: string | null;
+              userId?: string | null;
+              channel: 'email' | 'notification';
+              status: 'sent' | 'failed';
+            }> = [];
+
+            for (let j = 0; j < results.length; j++) {
+              const result = results[j];
+              const user = chunk[j].user;
+              const userEmail = user.email!.trim();
               if (result.status === 'fulfilled') {
                 job.emailSent++;
+                emailRecords.push({
+                  email: userEmail,
+                  name: user.name,
+                  userId: user.id,
+                  channel: 'email',
+                  status: 'sent',
+                });
               } else {
                 job.emailFailed++;
+                emailRecords.push({
+                  email: userEmail,
+                  name: user.name,
+                  userId: user.id,
+                  channel: 'email',
+                  status: 'failed',
+                });
                 this.logger.warn(
                   `Broadcast ${broadcastId}: affiliate email failed:`,
                   result.reason,
@@ -733,22 +1129,30 @@ export class AdminBroadcastService implements OnModuleInit {
               }
             }
 
+            await this.recordRecipients(broadcastId, emailRecords);
             await this.broadcastRepository.update(broadcastId, {
               emailSent: job.emailSent,
             });
           }
         } else {
           // Strategy A: SendGrid personalizations batch (up to 1,000 per call)
-          const emailRecipients: Array<{ email: string; name: string }> =
-            recipients
-              .filter((r) =>
-                r.kind === 'user' ? !!r.user.email : !!r.email,
-              )
-              .map((r) =>
-                r.kind === 'user'
-                  ? { email: r.user.email!, name: r.user.name || 'there' }
-                  : { email: r.email, name: r.name || 'there' },
-              );
+          const emailRecipients: Array<{
+            email: string;
+            name: string;
+            userId?: string | null;
+          }> = recipients
+            .filter((r) =>
+              r.kind === 'user' ? !!r.user.email : !!r.email,
+            )
+            .map((r) =>
+              r.kind === 'user'
+                ? {
+                    email: r.user.email!,
+                    name: r.user.name || 'there',
+                    userId: r.user.id,
+                  }
+                : { email: r.email, name: r.name || 'there', userId: null },
+            );
 
           const productPayload = featuredProducts.map((p) => ({
             id: p.id,
@@ -768,6 +1172,23 @@ export class AdminBroadcastService implements OnModuleInit {
 
           job.emailSent += result.sent;
           job.emailFailed += result.failed;
+
+          const emailByNorm = new Map(
+            emailRecipients.map((r) => [r.email.trim().toLowerCase(), r]),
+          );
+          await this.recordRecipients(
+            broadcastId,
+            result.results.map((r) => {
+              const meta = emailByNorm.get(r.email.trim().toLowerCase());
+              return {
+                email: r.email,
+                name: r.name,
+                userId: meta?.userId ?? null,
+                channel: 'email' as const,
+                status: r.status,
+              };
+            }),
+          );
 
           await this.broadcastRepository.update(broadcastId, {
             emailSent: job.emailSent,

@@ -20,6 +20,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
 import { AdminBroadcastService } from './admin-broadcast.service';
 import { CreateBroadcastDto } from './dto/create-broadcast.dto';
+import { ResendBroadcastRemainingDto } from './dto/resend-broadcast-remaining.dto';
 
 @ApiTags('admin-broadcast')
 @ApiBearerAuth('JWT-auth')
@@ -206,5 +207,62 @@ export class AdminBroadcastController {
   @ApiResponse({ status: 404, description: 'Broadcast not found' })
   getBroadcastProgress(@Param('id') id: string) {
     return this.adminBroadcastService.getProgress(id);
+  }
+
+  @Get(':id/recipients')
+  @ApiOperation({
+    summary: 'List recipients for a broadcast',
+    description:
+      'Returns paginated email/notification delivery records for a broadcast. Admin only.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'channel',
+    required: false,
+    enum: ['email', 'notification'],
+  })
+  getBroadcastRecipients(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('channel') channel?: 'email' | 'notification',
+  ) {
+    const pageNum = page ? parseInt(String(page), 10) : 1;
+    const limitNum = limit ? parseInt(String(limit), 10) : 50;
+    return this.adminBroadcastService.getRecipients(
+      id,
+      pageNum,
+      limitNum,
+      channel,
+    );
+  }
+
+  @Get(':id/delivery-stats')
+  @ApiOperation({
+    summary: 'Broadcast delivery stats',
+    description:
+      'Returns sent/failed counts and how many audience members can still receive this campaign by email. Admin only.',
+  })
+  getBroadcastDeliveryStats(@Param('id') id: string) {
+    return this.adminBroadcastService.getDeliveryStats(id);
+  }
+
+  @Post(':id/resend-remaining')
+  @ApiOperation({
+    summary: 'Send to remaining recipients',
+    description:
+      'Re-sends the same email to audience members who have not yet received it in this campaign. Admin only.',
+  })
+  resendBroadcastRemaining(
+    @Param('id') id: string,
+    @Body() dto: ResendBroadcastRemainingDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.adminBroadcastService.resendRemaining(
+      id,
+      user.id,
+      dto.recipientLimit,
+    );
   }
 }
