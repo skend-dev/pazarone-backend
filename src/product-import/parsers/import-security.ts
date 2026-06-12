@@ -163,7 +163,7 @@ export function isSafeExternalImageUrl(url: string): boolean {
     return false;
   }
   try {
-    const u = new URL(url.trim());
+    const u = new URL(normalizeExternalImageUrl(url.trim()));
     if (u.protocol !== 'http:' && u.protocol !== 'https:') {
       return false;
     }
@@ -176,6 +176,20 @@ export function isSafeExternalImageUrl(url: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function normalizeExternalImageUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:') {
+      parsed.protocol = 'https:';
+    }
+    return parsed.toString();
+  } catch {
+    return trimmed;
   }
 }
 

@@ -1,4 +1,4 @@
-import { isSafeExternalImageUrl } from './import-security';
+import { isSafeExternalImageUrl, normalizeExternalImageUrl } from './import-security';
 
 const IMG_SRC_REGEX =
   /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
@@ -27,7 +27,7 @@ export function extractImageUrlsFromHtml(html: string): string[] {
   while ((match = re.exec(html)) !== null) {
     const url = match[1]?.trim();
     if (url && isSafeExternalImageUrl(url)) {
-      urls.push(url);
+      urls.push(normalizeExternalImageUrl(url));
     }
   }
   return [...new Set(urls)];
@@ -37,7 +37,8 @@ export function parseImageList(raw: string, descriptionHtml?: string): string[] 
   const fromColumn = (raw || '')
     .split(/[,;\s]+/)
     .map((s) => s.trim())
-    .filter((s) => isSafeExternalImageUrl(s));
+    .filter((s) => isSafeExternalImageUrl(s))
+    .map((s) => normalizeExternalImageUrl(s));
 
   const fromDesc = descriptionHtml
     ? extractImageUrlsFromHtml(descriptionHtml)
