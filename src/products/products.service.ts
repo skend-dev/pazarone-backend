@@ -323,6 +323,15 @@ export class ProductsService {
 
     const hasVariants = !!(variants && variants.length > 0);
 
+    if (!hasVariants) {
+      const parsedStock = Number(createProductDto.stock);
+      if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+        throw new BadRequestException(
+          'Stock must be a non-negative number',
+        );
+      }
+    }
+
     // Parse salePriceExpiresAt if provided
     const salePriceExpiresAt = createProductDto.salePriceExpiresAt
       ? new Date(createProductDto.salePriceExpiresAt)
@@ -357,7 +366,7 @@ export class ProductsService {
       status: isVerified ? ProductStatus.ACTIVE : ProductStatus.INACTIVE, // Set to inactive if not approved
       hasVariants,
       // If has variants, stock will be calculated from variants
-      stock: hasVariants ? 0 : createProductDto.stock,
+      stock: hasVariants ? 0 : Math.floor(Number(createProductDto.stock)),
       shippingType: createProductDto.shippingType ?? null,
       shippingPriceNorthMacedonia: createProductDto.shippingPriceNorthMacedonia ?? null,
       shippingPriceKosovo: createProductDto.shippingPriceKosovo ?? null,
