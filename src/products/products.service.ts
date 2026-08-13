@@ -658,8 +658,20 @@ export class ProductsService {
     product.variantAttributes = undefined as any;
     product.variants = undefined as any;
 
-    // Handle variant updates
-    if (variantAttributes && variants) {
+    // Handle variant updates. Empty arrays are truthy in JS, so they must not
+    // be treated as an update — the UI sends [] to remove variants.
+    const hasVariantPayload =
+      Array.isArray(variantAttributes) &&
+      variantAttributes.length > 0 &&
+      Array.isArray(variants) &&
+      variants.length > 0;
+    const isClearingVariants =
+      variantAttributes === null ||
+      variants === null ||
+      (Array.isArray(variantAttributes) && variantAttributes.length === 0) ||
+      (Array.isArray(variants) && variants.length === 0);
+
+    if (hasVariantPayload) {
       // Get existing variants
       const existingVariants = await this.variantRepository.find({
         where: { productId: id },
@@ -726,7 +738,7 @@ export class ProductsService {
 
       // Stock will be calculated from variants in createVariantAttributes
       // Don't update stock manually if variants exist
-    } else if (variantAttributes === null || variants === null) {
+    } else if (isClearingVariants) {
       // Explicitly removing variants (sending null/empty array)
       // Get existing variants
       const existingVariants = await this.variantRepository.find({
@@ -956,7 +968,7 @@ export class ProductsService {
     }
 
     // Now create/update variants if provided (after product is saved)
-    if (variantAttributes && variants) {
+    if (hasVariantPayload) {
       // Get remaining existing variants (after deletion) to update them instead of creating duplicates
       const remainingExistingVariants = await this.variantRepository.find({
         where: { productId: id },
@@ -1641,7 +1653,7 @@ export class ProductsService {
     variants: CreateProductDto['variants'],
     existingVariantsMap?: Map<string, ProductVariant>,
   ): Promise<void> {
-    if (!variantAttributes || !variants) {
+    if (!variantAttributes?.length || !variants?.length) {
       return;
     }
 
