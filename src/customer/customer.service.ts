@@ -6,8 +6,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { User, UserType } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { CustomerAddress } from './entities/customer-address.entity';
@@ -19,6 +20,12 @@ import { UpdateNotificationPreferencesDto } from './dto/update-notification-pref
 import { EmailService } from '../auth/services/email.service';
 import { forwardRef, Inject } from '@nestjs/common';
 import { MarketingContactSyncService } from '../marketing/marketing-contact-sync.service';
+import { UserIdentity } from '../users/entities/user-identity.entity';
+import { Notification } from '../notifications/entities/notification.entity';
+import { PasswordReset } from '../auth/entities/password-reset.entity';
+import { MarketingContact } from '../marketing/entities/marketing-contact.entity';
+import { FirebaseAdminService } from '../firebase/firebase-admin.service';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @Injectable()
 export class CustomerService {
@@ -29,10 +36,20 @@ export class CustomerService {
     private addressesRepository: Repository<CustomerAddress>,
     @InjectRepository(CustomerNotificationPreferences)
     private notificationPreferencesRepository: Repository<CustomerNotificationPreferences>,
+    @InjectRepository(UserIdentity)
+    private userIdentityRepository: Repository<UserIdentity>,
+    @InjectRepository(Notification)
+    private notificationsRepository: Repository<Notification>,
+    @InjectRepository(PasswordReset)
+    private passwordResetRepository: Repository<PasswordReset>,
+    @InjectRepository(MarketingContact)
+    private marketingContactRepository: Repository<MarketingContact>,
     private usersService: UsersService,
     @Inject(forwardRef(() => EmailService))
     private emailService: EmailService,
     private readonly marketingContactSyncService: MarketingContactSyncService,
+    private readonly firebaseAdmin: FirebaseAdminService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -335,5 +352,84 @@ export class CustomerService {
     const saved = await this.notificationPreferencesRepository.save(preferences);
     await this.marketingContactSyncService.upsertFromUserId(customerId);
     return saved;
+  }
+
+  /**
+   * Permanently delete a customer account: remove personal data and anonymize the user
+   * record so historical orders remain valid for legal and accounting purposes.
+   */
+  async deleteAccount(
+    customerId: string,
+    dto: DeleteAccountDto,
+  ): Promise<{ success: true; message: string }> {
+    const user = await this.usersService.findOne(customerId);
+    this.validateCustomer(user);
+
+    if (user.hasPlatformPassword) {
+      const password = dto.currentPassword?.trim();
+      if (!password) {
+        throw new BadRequestException(
+          'Current password is required to delete this account',
+        );
+      }
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
+    }
+
+    const identities = await this.userIdentityRepository.find({
+      where: { userId: customerId },
+    });
+
+    for (const identity of identities) {
+      try {
+        await this.firebaseAdmin.deleteAuthUser(identity.providerUid);
+      } catch (err) {
+        console.error(
+          `Firebase delete failed for user ${customerId} provider ${identity.provider}:`,
+          err,
+        );
+      }
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      await queryRunner.manager.delete(CustomerAddress, { customerId });
+      await queryRunner.manager.delete(CustomerNotificationPreferences, {
+        customerId,
+      });
+      await queryRunner.manager.delete(Notification, { userId: customerId });
+      await queryRunner.manager.delete(PasswordReset, { userId: customerId });
+      await queryRunner.manager.delete(MarketingContact, { userId: customerId });
+      await queryRunner.manager.delete(UserIdentity, { userId: customerId });
+
+      const placeholderPassword = randomBytes(32).toString('hex');
+      const hashedPassword = await bcrypt.hash(placeholderPassword, 10);
+
+      await queryRunner.manager.update(User, customerId, {
+        email: `deleted.${customerId}@deleted.pazarone.internal`,
+        name: 'Deleted User',
+        phone: null,
+        avatarUrl: null,
+        password: hashedPassword,
+        hasPlatformPassword: false,
+      });
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+
+    return {
+      success: true,
+      message: 'Account deleted successfully',
+    };
   }
 }

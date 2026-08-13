@@ -54,6 +54,25 @@ export class FirebaseAdminService implements OnModuleInit {
    * Verifies the Firebase ID token and optionally checks revocation.
    * Returns decoded claims. Use only Firebase-verified claims (uid, email, etc.).
    */
+  /**
+   * Permanently deletes a Firebase Auth user when Admin SDK is configured.
+   * No-op when Firebase is not configured (e.g. local dev without credentials).
+   */
+  async deleteAuthUser(firebaseUid: string): Promise<void> {
+    if (!this.app || !firebaseUid?.trim()) {
+      return;
+    }
+    try {
+      await this.app.auth().deleteUser(firebaseUid.trim());
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/user-not-found') {
+        return;
+      }
+      throw err;
+    }
+  }
+
   async verifyIdToken(idToken: string, checkRevoked = true): Promise<FirebaseDecodedToken> {
     if (!this.app) {
       throw new Error('Firebase Admin is not configured. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.');

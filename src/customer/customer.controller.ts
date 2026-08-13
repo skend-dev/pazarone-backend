@@ -33,6 +33,7 @@ import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { CancelOrderDto } from '../orders/dto/cancel-order.dto';
 import { ReturnOrderDto } from '../orders/dto/return-order.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @ApiTags('customer')
 @ApiBearerAuth('JWT-auth')
@@ -140,6 +141,39 @@ export class CustomerController {
         updatedAt: updatedUser.updatedAt,
       },
     };
+  }
+
+  @Delete('account')
+  @ApiOperation({
+    summary: 'Delete customer account',
+    description:
+      'Permanently deletes the authenticated customer account and associated personal data. Order history is retained in anonymized form where required by law.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Account deleted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Account deleted successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Password required or validation error',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized or wrong password' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - customer access required',
+  })
+  async deleteAccount(
+    @CurrentUser() user: User,
+    @Body() deleteAccountDto: DeleteAccountDto,
+  ) {
+    return this.customerService.deleteAccount(user.id, deleteAccountDto);
   }
 
   @Put('password')
