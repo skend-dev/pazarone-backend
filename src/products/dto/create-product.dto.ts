@@ -12,6 +12,7 @@ import {
   ValidateNested,
   IsUrl,
   IsDateString,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -90,10 +91,18 @@ export class CreateProductDto {
   @IsOptional()
   salePriceExpiresAt?: string;
 
-  @ApiProperty({ description: 'Stock quantity', example: 45, minimum: 0 })
+  @ApiPropertyOptional({
+    description:
+      'Stock quantity. Required when the product has no variants; omitted or ignored when variants are provided (summed from variant stock).',
+    example: 45,
+    minimum: 0,
+  })
+  @ValidateIf(
+    (o: CreateProductDto) => !o.variants || o.variants.length === 0,
+  )
   @IsNumber()
   @Min(0)
-  stock: number;
+  stock?: number;
 
   @ApiPropertyOptional({
     description: 'SKU (Stock Keeping Unit)',
