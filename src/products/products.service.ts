@@ -658,18 +658,20 @@ export class ProductsService {
     product.variantAttributes = undefined as any;
     product.variants = undefined as any;
 
-    // Handle variant updates. Empty arrays are truthy in JS, so they must not
-    // be treated as an update — the UI sends [] to remove variants.
+    // Empty arrays are truthy in JS. The UI sends []/[] to remove variants, so
+    // only treat non-empty arrays as a variant update.
     const hasVariantPayload =
       Array.isArray(variantAttributes) &&
       variantAttributes.length > 0 &&
       Array.isArray(variants) &&
       variants.length > 0;
+    // Require both fields to be present and empty/null so a partial payload
+    // cannot wipe variants (e.g. variants omitted on a simple stock edit).
     const isClearingVariants =
-      variantAttributes === null ||
-      variants === null ||
-      (Array.isArray(variantAttributes) && variantAttributes.length === 0) ||
-      (Array.isArray(variants) && variants.length === 0);
+      variantAttributes !== undefined &&
+      variants !== undefined &&
+      this.isEmptyVariantField(variantAttributes) &&
+      this.isEmptyVariantField(variants);
 
     if (hasVariantPayload) {
       // Get existing variants
@@ -727,6 +729,19 @@ export class ProductsService {
           const normalized = this.normalizeCombination(variant.combination);
           existingVariantsMap.delete(normalized);
         }
+      }
+
+      // Keep order-history variants but hide them from the storefront/edit form
+      const variantsToDeactivate = existingVariants.filter(
+        (v) =>
+          usedVariantIds.has(v.id) &&
+          !newVariantCombinations.has(this.normalizeCombination(v.combination)),
+      );
+      if (variantsToDeactivate.length > 0) {
+        await this.variantRepository.update(
+          { id: In(variantsToDeactivate.map((v) => v.id)) },
+          { isActive: false },
+        );
       }
 
       // Delete all variant attributes (they can be recreated)
@@ -813,16 +828,23 @@ export class ProductsService {
 
     // Update stock status if stock is being updated (only for non-variant products)
     if (stock !== undefined && !product.hasVariants) {
-      if (stock === 0 && product.status === ProductStatus.ACTIVE) {
+      const parsedStock = Number(stock);
+      if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+        throw new BadRequestException(
+          'Stock must be a non-negative number',
+        );
+      }
+      const nextStock = Math.floor(parsedStock);
+      if (nextStock === 0 && product.status === ProductStatus.ACTIVE) {
         product.status = ProductStatus.OUT_OF_STOCK;
-      } else if (stock > 0 && product.status === ProductStatus.OUT_OF_STOCK) {
+      } else if (nextStock > 0 && product.status === ProductStatus.OUT_OF_STOCK) {
         // Only allow status change to ACTIVE if seller is not frozen
         if (!isFrozen) {
           product.status = ProductStatus.ACTIVE;
         }
         // If frozen, keep status as OUT_OF_STOCK (don't change to ACTIVE)
       }
-      product.stock = stock;
+      product.stock = nextStock;
     }
 
     // Handle salePriceExpiresAt update if provided
@@ -1631,6 +1653,16 @@ export class ProductsService {
         storeLogo: sellerSettings?.logo || null,
       },
     } as Product;
+  }
+
+  /**
+   * True for null or [] — the edit UI's signal to remove variants.
+   * undefined means the field was omitted and must be left alone.
+   */
+  private isEmptyVariantField(
+    value: unknown[] | null | undefined,
+  ): boolean {
+    return value === null || (Array.isArray(value) && value.length === 0);
   }
 
   /**
