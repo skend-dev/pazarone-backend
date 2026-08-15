@@ -8,14 +8,12 @@ import {
   JoinColumn,
   OneToMany,
   Index,
-  AfterLoad,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Category } from '../../categories/entities/category.entity';
 import { OrderItem } from '../../orders/entities/order-item.entity';
 import { ProductVariantAttribute } from './product-variant-attribute.entity';
 import { ProductVariant } from './product-variant.entity';
-import { rewriteProductImageUrls } from '../product-image-url.util';
 
 export enum ProductStatus {
   ACTIVE = 'active',
@@ -187,9 +185,4 @@ export class Product {
 
   @Column({ type: 'varchar', length: 32, nullable: true })
   importSource: string | null;
-
-  @AfterLoad()
-  rewriteWebpImageUrls() {
-    this.images = rewriteProductImageUrls(this.images);
-  }
 }

@@ -7,10 +7,8 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
-  AfterLoad,
 } from 'typeorm';
 import { Product } from './product.entity';
-import { rewriteProductImageUrls } from '../product-image-url.util';
 
 /**
  * Product Variant
@@ -68,10 +66,5 @@ export class ProductVariant {
 
   @UpdateDateColumn()
   updatedAt: Date;
-
-  @AfterLoad()
-  rewriteWebpImageUrls() {
-    this.images = rewriteProductImageUrls(this.images);
-  }
 }
 

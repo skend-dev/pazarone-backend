@@ -54,6 +54,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { UserIdentity } from './users/entities/user-identity.entity';
 import { MarketingModule } from './marketing/marketing.module';
 import { ProductImportModule } from './product-import/product-import.module';
+import {
+  ProductImageSubscriber,
+  ProductVariantImageSubscriber,
+} from './products/product-image.subscriber';
 import { MarketingContact } from './marketing/entities/marketing-contact.entity';
 import { MarketingInfobipDeliveryEvent } from './marketing/entities/marketing-infobip-delivery-event.entity';
 import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-infobip-inbound-message.entity';
@@ -113,6 +117,7 @@ import { MarketingInfobipInboundMessage } from './marketing/entities/marketing-i
           MarketingInfobipDeliveryEvent,
           MarketingInfobipInboundMessage,
         ],
+        subscribers: [ProductImageSubscriber, ProductVariantImageSubscriber],
         synchronize: false, // Always false - use migrations in production
         // Only log errors in development, disable query logging for cleaner output
         logging:
