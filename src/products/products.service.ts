@@ -77,14 +77,16 @@ export class ProductsService {
       .filter((url): url is string => url !== null && typeof url === 'string');
   }
 
-  /** Compare image lists as sets (order-insensitive). */
+  /** Compare image lists as sets (order-insensitive). Same Cloudinary public ID counts as equal. */
   private areImageListsEqual(a: string[], b: string[]): boolean {
     if (a.length !== b.length) {
       return false;
     }
-    const sortedA = [...a].sort();
-    const sortedB = [...b].sort();
-    return sortedA.every((url, i) => url === sortedB[i]);
+    const key = (url: string) =>
+      this.cloudinaryService.extractPublicIdFromUrl(url) || url;
+    const sortedA = [...a].map(key).sort();
+    const sortedB = [...b].map(key).sort();
+    return sortedA.every((id, i) => id === sortedB[i]);
   }
 
   /**
@@ -453,6 +455,20 @@ export class ProductsService {
       return [];
     }
     return urls;
+  }
+
+  /** Same Cloudinary asset (public ID) counts as kept even if the URL extension changed. */
+  private imageUrlKept(oldUrl: string, newImages: string[]): boolean {
+    if (newImages.includes(oldUrl)) {
+      return true;
+    }
+    const oldId = this.cloudinaryService.extractPublicIdFromUrl(oldUrl);
+    if (!oldId) {
+      return false;
+    }
+    return newImages.some(
+      (newUrl) => this.cloudinaryService.extractPublicIdFromUrl(newUrl) === oldId,
+    );
   }
 
   async findAll(
@@ -915,10 +931,11 @@ export class ProductsService {
         userType !== UserType.ADMIN &&
         !this.areImageListsEqual(oldImages, newImages);
 
-      // Find images that are being removed (old images not in new array)
+      // Find images that are being removed (old images not in new array).
+      // Compare Cloudinary public IDs so a .webp → .jpg rewrite of the same asset is not treated as a delete.
       const imagesToDelete = this.urlsForCloudinaryDeletion(
         product,
-        oldImages.filter((oldUrl) => !newImages.includes(oldUrl)),
+        oldImages.filter((oldUrl) => !this.imageUrlKept(oldUrl, newImages)),
       );
 
       // Delete removed images from Cloudinary
@@ -1116,7 +1133,7 @@ export class ProductsService {
     
     const imagesToDelete = this.urlsForCloudinaryDeletion(
       product,
-      oldImages.filter((oldUrl) => !images.includes(oldUrl)),
+      oldImages.filter((oldUrl) => !this.imageUrlKept(oldUrl, images)),
     );
 
     if (imagesToDelete.length > 0) {

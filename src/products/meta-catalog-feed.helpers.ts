@@ -1,5 +1,6 @@
 import type { Category } from '../categories/entities/category.entity';
 import { Product, ProductStatus } from './entities/product.entity';
+import { rewriteCloudinaryWebpToJpg } from './product-image-url.util';
 
 function slugify(text: string): string {
   if (!text) return '';
@@ -138,7 +139,9 @@ export function metaFeedProductImage(
   product: Product,
   siteOrigin: string,
 ): string {
-  const raw = getFirstProductImage(product.images as unknown);
+  const raw = rewriteCloudinaryWebpToJpg(
+    getFirstProductImage(product.images as unknown),
+  );
   return metaFeedAbsolutizeUrl(raw, siteOrigin);
 }
 
