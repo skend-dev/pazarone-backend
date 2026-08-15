@@ -1,6 +1,9 @@
 import type { Category } from '../categories/entities/category.entity';
 import { Product, ProductStatus } from './entities/product.entity';
-import { rewriteCloudinaryWebpToJpg } from './product-image-url.util';
+import {
+  cloudinaryJpegForMetaCatalog,
+  splitConcatenatedImageUrls,
+} from './product-image-url.util';
 
 function slugify(text: string): string {
   if (!text) return '';
@@ -37,8 +40,8 @@ export function escapeXml(s: string): string {
 function parseProductImages(images: unknown): string[] {
   if (!images) return [];
   if (Array.isArray(images)) {
-    return images.filter(
-      (x): x is string => typeof x === 'string' && x.trim() !== '',
+    return images.flatMap((item) =>
+      typeof item === 'string' ? splitConcatenatedImageUrls(item) : [],
     );
   }
   if (typeof images === 'string') {
@@ -47,15 +50,9 @@ function parseProductImages(images: unknown): string[] {
       if (Array.isArray(parsed)) {
         return parseProductImages(parsed);
       }
-      if (images.startsWith('http')) return [images];
+      if (images.startsWith('http')) return splitConcatenatedImageUrls(images);
     } catch {
-      if (images.includes(',')) {
-        return images
-          .split(',')
-          .map((u) => u.trim())
-          .filter(Boolean);
-      }
-      if (images.trim()) return [images.trim()];
+      if (images.trim()) return splitConcatenatedImageUrls(images);
     }
   }
   return [];
@@ -139,7 +136,7 @@ export function metaFeedProductImage(
   product: Product,
   siteOrigin: string,
 ): string {
-  const raw = rewriteCloudinaryWebpToJpg(
+  const raw = cloudinaryJpegForMetaCatalog(
     getFirstProductImage(product.images as unknown),
   );
   return metaFeedAbsolutizeUrl(raw, siteOrigin);
