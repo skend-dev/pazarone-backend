@@ -8,6 +8,26 @@ export function splitConcatenatedImageUrls(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Meta Commerce Manager accepts JPEG or PNG only (not WebP, AVIF, GIF, SVG, …). */
+const META_CATALOG_ALLOWED_EXT = /\.(jpe?g|png)(\?|$)/i;
+const META_CATALOG_UNSUPPORTED_EXT =
+  /\.(webp|avif|gif|svg|bmp|tiff?|heic|heif)(\?|$)/i;
+
+export function isMetaCatalogJpegOrPngUrl(url: string): boolean {
+  if (!url?.trim()) return false;
+  const path = url.split('?')[0].toLowerCase();
+  if (META_CATALOG_UNSUPPORTED_EXT.test(path)) return false;
+  if (path.includes('cloudinary.com')) {
+    return (
+      path.includes('/f_jpg/') ||
+      path.includes('f_jpg/') ||
+      path.includes('%2f_jpg') ||
+      META_CATALOG_ALLOWED_EXT.test(path)
+    );
+  }
+  return META_CATALOG_ALLOWED_EXT.test(path);
+}
+
 /** Cloudinary serves JPEG when the URL extension is .jpg for the same public ID. */
 export function rewriteCloudinaryWebpToJpg(url: string): string {
   if (!url || !url.includes('cloudinary.com')) {
@@ -67,6 +87,46 @@ export function cloudinaryJpegForMetaCatalog(url: string): string {
   }
 
   return `${base}${META_SAFE_JPEG_TRANSFORM}/${jpgPath}`;
+}
+
+/**
+ * Absolute JPEG/PNG URL for Meta catalog `image_link`.
+ * Cloudinary assets are forced to JPEG via f_jpg; other hosts must already be .jpg/.jpeg/.png.
+ */
+export function ensureMetaCatalogImageUrl(
+  url: string,
+  siteOrigin: string,
+): string {
+  const origin = siteOrigin.replace(/\/$/, '');
+  const fallback = `${origin}/og-image.png`;
+  const trimmed = url?.trim() ?? '';
+
+  if (!trimmed || trimmed === '/placeholder.svg') {
+    return fallback;
+  }
+
+  let absolute = trimmed;
+  if (trimmed.startsWith('//')) {
+    absolute = `https:${trimmed}`;
+  } else if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    absolute = `${origin}${trimmed}`;
+  } else if (!/^https?:\/\//i.test(trimmed)) {
+    absolute = `${origin}/${trimmed.replace(/^\//, '')}`;
+  }
+
+  if (absolute.includes('cloudinary.com')) {
+    return cloudinaryJpegForMetaCatalog(absolute);
+  }
+
+  const bare = absolute.split('?')[0];
+  if (META_CATALOG_UNSUPPORTED_EXT.test(bare)) {
+    return fallback;
+  }
+  if (META_CATALOG_ALLOWED_EXT.test(bare)) {
+    return bare;
+  }
+
+  return fallback;
 }
 
 export function rewriteProductImageUrls(
