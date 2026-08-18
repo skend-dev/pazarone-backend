@@ -38,8 +38,9 @@ export function cloudinaryAssetPathAfterUpload(url: string): string | null {
 const META_SAFE_JPEG_TRANSFORM = 'w_1000/h_1000/c_pad/b_white/f_jpg';
 
 /**
- * Meta-safe Cloudinary JPEG URL (no commas). Plain .jpg/.png assets are returned
- * unchanged; webp/avif get a comma-free pad transform so size/format rules pass.
+ * Meta-safe Cloudinary JPEG URL (no commas).
+ * Always uses a slash transform prefix so Commerce Manager sees a new URL and
+ * re-fetches after prior failed webp or comma-truncated ingests.
  */
 export function cloudinaryJpegForMetaCatalog(url: string): string {
   if (!url?.includes('cloudinary.com')) {
@@ -58,10 +59,9 @@ export function cloudinaryJpegForMetaCatalog(url: string): string {
   }
 
   const base = url.slice(0, index + marker.length);
-  const sourceIsWebpOrAvif = /\.(webp|avif)$/i.test(assetPath);
-  const jpgPath = assetPath.replace(/\.(webp|avif)$/i, '.jpg');
+  const jpgPath = assetPath.replace(/\.(webp|avif|png)$/i, '.jpg');
 
-  if (/\.(jpe?g|png)$/i.test(jpgPath) && !sourceIsWebpOrAvif) {
+  if (jpgPath.startsWith(`${META_SAFE_JPEG_TRANSFORM}/`)) {
     return `${base}${jpgPath}`;
   }
 
