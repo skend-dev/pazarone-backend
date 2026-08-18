@@ -24,7 +24,11 @@ export class MetaProductImageService {
     return url.replace(/\/$/, '');
   }
 
-  async streamProductImage(rawProductId: string, res: Response): Promise<void> {
+  async streamProductImage(
+    rawProductId: string,
+    res: Response,
+    headOnly = false,
+  ): Promise<void> {
     const origin = this.siteOrigin();
     const fallback = `${origin}/og-image.png`;
     const productId = rawProductId.replace(/\.jpe?g$/i, '');
@@ -46,13 +50,14 @@ export class MetaProductImageService {
       }
     }
 
-    await this.streamImageUrl(sourceUrl, res, fallback);
+    await this.streamImageUrl(sourceUrl, res, fallback, headOnly);
   }
 
   private async streamImageUrl(
     url: string,
     res: Response,
     fallback: string,
+    headOnly = false,
   ): Promise<void> {
     const tryFetch = async (target: string) => {
       try {
@@ -96,6 +101,11 @@ export class MetaProductImageService {
       'Cache-Control',
       'public, max-age=86400, stale-while-revalidate=604800',
     );
+    if (headOnly) {
+      res.setHeader('Content-Length', buffer.length.toString());
+      res.end();
+      return;
+    }
     res.send(buffer);
   }
 }
