@@ -1,9 +1,6 @@
 import type { Category } from '../categories/entities/category.entity';
 import { Product, ProductStatus } from './entities/product.entity';
-import {
-  ensureMetaCatalogImageUrl,
-  splitConcatenatedImageUrls,
-} from './product-image-url.util';
+import { splitConcatenatedImageUrls } from './product-image-url.util';
 
 function slugify(text: string): string {
   if (!text) return '';
@@ -132,14 +129,20 @@ export function metaFeedProductLink(
   return `${origin}/${locale}/product/${slug}`;
 }
 
+/** Same-domain image URL for Meta Commerce Manager (matches g:link host). */
+export function metaCatalogProductImageUrl(
+  productId: string,
+  siteOrigin: string,
+): string {
+  const origin = siteOrigin.replace(/\/$/, '');
+  return `${origin}/api/meta-product-image/${productId}.jpg`;
+}
+
 export function metaFeedProductImage(
   product: Product,
   siteOrigin: string,
 ): string {
-  return ensureMetaCatalogImageUrl(
-    getFirstProductImage(product.images as unknown),
-    siteOrigin,
-  );
+  return metaCatalogProductImageUrl(product.id, siteOrigin);
 }
 
 export function formatMetaCatalogMoney(amount: number, currency: string): string {

@@ -5,6 +5,8 @@ import { ProductsController } from './products.controller';
 import { PublicProductsController } from './public-products.controller';
 import { MetaCatalogFeedController } from './meta-catalog-feed.controller';
 import { MetaCatalogFeedService } from './meta-catalog-feed.service';
+import { MetaProductImageController } from './meta-product-image.controller';
+import { MetaProductImageService } from './meta-product-image.service';
 import { Product } from './entities/product.entity';
 import { ProductVariantAttribute } from './entities/product-variant-attribute.entity';
 import { ProductVariantValue } from './entities/product-variant-value.entity';
@@ -37,8 +39,13 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
     ProductsController,
     PublicProductsController,
     MetaCatalogFeedController,
+    MetaProductImageController,
   ],
-  providers: [ProductsService, MetaCatalogFeedService],
+  providers: [
+    ProductsService,
+    MetaCatalogFeedService,
+    MetaProductImageService,
+  ],
   exports: [ProductsService],
 })
 export class ProductsModule {}
