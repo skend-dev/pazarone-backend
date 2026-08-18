@@ -54,8 +54,8 @@ export function cloudinaryAssetPathAfterUpload(url: string): string | null {
   return rest || null;
 }
 
-/** Encoded commas (%2C) — Meta splits image_link on literal commas, Cloudinary needs c_fill,w_1000,h_1000. */
-const META_SAFE_JPEG_TRANSFORM = 'c_fill%2Cw_1000%2Ch_1000/f_jpg';
+/** Slash-only transform — no commas or %2C (Meta splits image_link on literal commas). */
+const META_SAFE_JPEG_TRANSFORM = 'w_1000/h_1000/c_fill/f_jpg';
 
 /**
  * Meta-safe Cloudinary JPEG URL (no commas).
@@ -127,6 +127,41 @@ export function ensureMetaCatalogImageUrl(
   }
 
   return fallback;
+}
+
+/** Ordered catalog image URLs derived from a product's stored images. */
+export function metaCatalogImageCandidates(
+  images: unknown,
+  siteOrigin: string,
+): string[] {
+  const origin = siteOrigin.replace(/\/$/, '');
+  const urls: string[] = [];
+
+  const push = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    for (const part of splitConcatenatedImageUrls(value)) {
+      urls.push(ensureMetaCatalogImageUrl(part, origin));
+    }
+  };
+
+  if (!images) return urls;
+  if (Array.isArray(images)) {
+    for (const item of images) push(item);
+    return urls;
+  }
+  if (typeof images === 'string') {
+    try {
+      const parsed = JSON.parse(images) as unknown;
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) push(item);
+        return urls;
+      }
+    } catch {
+      /* fall through */
+    }
+    push(images);
+  }
+  return urls;
 }
 
 export function rewriteProductImageUrls(

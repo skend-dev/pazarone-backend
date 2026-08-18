@@ -10,6 +10,7 @@ import {
   buildMetaProductFeedXml,
   productToMetaFeedItemJson,
 } from './meta-catalog-feed.helpers';
+import { resolveMetaCatalogImageLinks } from './meta-catalog-image.resolver';
 
 const DEFAULT_LOCALE = 'mk';
 
@@ -66,7 +67,9 @@ export class MetaCatalogFeedService {
     filters?: MetaCatalogFeedFilters,
   ): Promise<string> {
     const products = await this.fetchAllFeedProducts(filters);
-    return buildMetaProductFeedXml(products, this.siteOrigin(), locale);
+    const origin = this.siteOrigin();
+    const imageLinks = await resolveMetaCatalogImageLinks(products, origin);
+    return buildMetaProductFeedXml(products, origin, locale, imageLinks);
   }
 
   async getJson(
@@ -78,8 +81,9 @@ export class MetaCatalogFeedService {
   }> {
     const products = await this.fetchAllFeedProducts(filters);
     const origin = this.siteOrigin();
+    const imageLinks = await resolveMetaCatalogImageLinks(products, origin);
     const items = products.map((p) =>
-      productToMetaFeedItemJson(p, origin, locale),
+      productToMetaFeedItemJson(p, origin, locale, imageLinks.get(p.id)),
     );
     return { items, count: items.length };
   }
