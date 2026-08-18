@@ -8,6 +8,26 @@ export function splitConcatenatedImageUrls(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Meta Commerce Manager accepts JPEG or PNG only (not WebP, AVIF, GIF, SVG, …). */
+const META_CATALOG_ALLOWED_EXT = /\.(jpe?g|png)(\?|$)/i;
+const META_CATALOG_UNSUPPORTED_EXT =
+  /\.(webp|avif|gif|svg|bmp|tiff?|heic|heif)(\?|$)/i;
+
+export function isMetaCatalogJpegOrPngUrl(url: string): boolean {
+  if (!url?.trim()) return false;
+  const path = url.split('?')[0].toLowerCase();
+  if (META_CATALOG_UNSUPPORTED_EXT.test(path)) return false;
+  if (path.includes('cloudinary.com')) {
+    return (
+      path.includes('/f_jpg/') ||
+      path.includes('f_jpg/') ||
+      path.includes('%2f_jpg') ||
+      META_CATALOG_ALLOWED_EXT.test(path)
+    );
+  }
+  return META_CATALOG_ALLOWED_EXT.test(path);
+}
+
 /** Cloudinary serves JPEG when the URL extension is .jpg for the same public ID. */
 export function rewriteCloudinaryWebpToJpg(url: string): string {
   if (!url || !url.includes('cloudinary.com')) {
@@ -34,8 +54,8 @@ export function cloudinaryAssetPathAfterUpload(url: string): string | null {
   return rest || null;
 }
 
-/** Slash-separated transforms only — Meta catalog parsers split image_link on commas. */
-const META_SAFE_JPEG_TRANSFORM = 'w_1000/h_1000/c_pad/b_white/f_jpg';
+/** Encoded commas (%2C) — Meta splits image_link on literal commas, Cloudinary needs c_fill,w_1000,h_1000. */
+const META_SAFE_JPEG_TRANSFORM = 'c_fill%2Cw_1000%2Ch_1000/f_jpg';
 
 /**
  * Meta-safe Cloudinary JPEG URL (no commas).
@@ -60,12 +80,53 @@ export function cloudinaryJpegForMetaCatalog(url: string): string {
 
   const base = url.slice(0, index + marker.length);
   const jpgPath = assetPath.replace(/\.(webp|avif|png)$/i, '.jpg');
+  const normalized = url.split('?')[0];
 
-  if (jpgPath.startsWith(`${META_SAFE_JPEG_TRANSFORM}/`)) {
-    return `${base}${jpgPath}`;
+  if (normalized.includes(`${marker}${META_SAFE_JPEG_TRANSFORM}/`)) {
+    return normalized;
   }
 
   return `${base}${META_SAFE_JPEG_TRANSFORM}/${jpgPath}`;
+}
+
+/**
+ * Absolute JPEG/PNG URL for Meta catalog `image_link`.
+ * Cloudinary assets are forced to JPEG via f_jpg; other hosts must already be .jpg/.jpeg/.png.
+ */
+export function ensureMetaCatalogImageUrl(
+  url: string,
+  siteOrigin: string,
+): string {
+  const origin = siteOrigin.replace(/\/$/, '');
+  const fallback = `${origin}/og-image.png`;
+  const trimmed = url?.trim() ?? '';
+
+  if (!trimmed || trimmed === '/placeholder.svg') {
+    return fallback;
+  }
+
+  let absolute = trimmed;
+  if (trimmed.startsWith('//')) {
+    absolute = `https:${trimmed}`;
+  } else if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    absolute = `${origin}${trimmed}`;
+  } else if (!/^https?:\/\//i.test(trimmed)) {
+    absolute = `${origin}/${trimmed.replace(/^\//, '')}`;
+  }
+
+  if (absolute.includes('cloudinary.com')) {
+    return cloudinaryJpegForMetaCatalog(absolute);
+  }
+
+  const bare = absolute.split('?')[0];
+  if (META_CATALOG_UNSUPPORTED_EXT.test(bare)) {
+    return fallback;
+  }
+  if (META_CATALOG_ALLOWED_EXT.test(bare)) {
+    return bare;
+  }
+
+  return fallback;
 }
 
 export function rewriteProductImageUrls(

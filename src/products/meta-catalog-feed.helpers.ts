@@ -1,7 +1,7 @@
 import type { Category } from '../categories/entities/category.entity';
 import { Product, ProductStatus } from './entities/product.entity';
 import {
-  cloudinaryJpegForMetaCatalog,
+  ensureMetaCatalogImageUrl,
   splitConcatenatedImageUrls,
 } from './product-image-url.util';
 
@@ -136,10 +136,10 @@ export function metaFeedProductImage(
   product: Product,
   siteOrigin: string,
 ): string {
-  const raw = cloudinaryJpegForMetaCatalog(
+  return ensureMetaCatalogImageUrl(
     getFirstProductImage(product.images as unknown),
+    siteOrigin,
   );
-  return metaFeedAbsolutizeUrl(raw, siteOrigin);
 }
 
 export function formatMetaCatalogMoney(amount: number, currency: string): string {
