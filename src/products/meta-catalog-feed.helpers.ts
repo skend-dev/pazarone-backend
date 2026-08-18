@@ -135,7 +135,7 @@ export function metaCatalogProductImageUrl(
   siteOrigin: string,
 ): string {
   const origin = siteOrigin.replace(/\/$/, '');
-  return `${origin}/api/meta-product-image/${productId}.jpg?v=2`;
+  return `${origin}/api/meta-product-image/${productId}.jpg?v=3`;
 }
 
 export function metaFeedProductImage(
