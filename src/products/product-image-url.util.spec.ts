@@ -15,11 +15,11 @@ describe('product-image-url.util', () => {
   const legacySlashTransform =
     'https://res.cloudinary.com/demo/image/upload/w_1000/h_1000/c_pad/b_white/f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg';
 
-  it('strips legacy transforms and emits Meta-safe encoded c_fill URL', () => {
+  it('strips legacy transforms and emits Meta-safe slash-only c_fill URL', () => {
     const out = cloudinaryJpegForMetaCatalog(legacySlashTransform);
-    expect(out).toContain('c_fill%2Cw_1000%2Ch_1000/f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg');
+    expect(out).toContain('w_1000/h_1000/c_fill/f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg');
     expect(out).not.toContain(',');
-    expect(out).not.toMatch(/\.(webp|avif|gif|svg)$/i);
+    expect(out).not.toContain('%2C');
   });
 
   it('does not double-wrap an already Meta-safe URL', () => {

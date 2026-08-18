@@ -193,6 +193,7 @@ export function productToMetaFeedItemXml(
   product: Product,
   siteOrigin: string,
   locale: string,
+  imageLink?: string,
 ): string {
   const { amount, currency } = metaFeedPrice(product);
   const availability = metaFeedAvailability(product);
@@ -205,7 +206,9 @@ export function productToMetaFeedItemXml(
     ),
   );
   const link = escapeXml(metaFeedProductLink(product, siteOrigin, locale));
-  const imageLink = escapeXml(metaFeedProductImage(product, siteOrigin));
+  const resolvedImageLink = escapeXml(
+    imageLink ?? metaFeedProductImage(product, siteOrigin),
+  );
   const price = escapeXml(formatMetaCatalogMoney(amount, currency));
   const productType = metaFeedProductType(product, locale);
   const productTypeXml = productType
@@ -225,7 +228,7 @@ export function productToMetaFeedItemXml(
       <g:condition>new</g:condition>
       <g:price>${price}</g:price>
       <g:link>${link}</g:link>
-      <g:image_link>${imageLink}</g:image_link>
+      <g:image_link>${resolvedImageLink}</g:image_link>
       <g:brand>${escapeXml(brand.slice(0, 100))}</g:brand>
       ${productTypeXml}
       ${categoryIdXml}
@@ -236,6 +239,7 @@ export function productToMetaFeedItemJson(
   product: Product,
   siteOrigin: string,
   locale: string,
+  imageLink?: string,
 ) {
   const { amount, currency } = metaFeedPrice(product);
   const brand = productStoreName(product);
@@ -250,7 +254,7 @@ export function productToMetaFeedItemJson(
     condition: 'new',
     price: formatMetaCatalogMoney(amount, currency),
     link: metaFeedProductLink(product, siteOrigin, locale),
-    image_link: metaFeedProductImage(product, siteOrigin),
+    image_link: imageLink ?? metaFeedProductImage(product, siteOrigin),
     brand,
     ...(productType ? { product_type: productType } : {}),
     ...(product.categoryId?.trim() && productType
@@ -263,11 +267,19 @@ export function buildMetaProductFeedXml(
   products: Product[],
   siteOrigin: string,
   locale: string,
+  imageLinks?: Map<string, string>,
 ): string {
   const channelTitle = escapeXml('PazarOne Catalog');
   const channelLink = escapeXml(siteOrigin.replace(/\/$/, ''));
   const items = products
-    .map((p) => productToMetaFeedItemXml(p, siteOrigin, locale))
+    .map((p) =>
+      productToMetaFeedItemXml(
+        p,
+        siteOrigin,
+        locale,
+        imageLinks?.get(p.id),
+      ),
+    )
     .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
