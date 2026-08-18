@@ -16,24 +16,56 @@ export function rewriteCloudinaryWebpToJpg(url: string): string {
   return url.replace(/\.(webp|avif)(\?|$)/gi, '.jpg$2');
 }
 
-const META_JPEG_TRANSFORM = 'f_jpg,q_auto:good,c_pad,w_1000,h_1000,b_white';
+/**
+ * Cloudinary path after /image/upload/, skipping any existing transform segments.
+ * e.g. f_jpg,q_auto:good,.../v123/id.jpg → v123/id.jpg
+ */
+export function cloudinaryAssetPathAfterUpload(url: string): string | null {
+  const marker = '/image/upload/';
+  const index = url.indexOf(marker);
+  if (index === -1) return null;
+
+  let rest = url.slice(index + marker.length).split('?')[0];
+  while (rest.length > 0 && !/^v\d+\//.test(rest)) {
+    const slash = rest.indexOf('/');
+    if (slash === -1) return null;
+    rest = rest.slice(slash + 1);
+  }
+  return rest || null;
+}
+
+/** Slash-separated transforms only — Meta catalog parsers split image_link on commas. */
+const META_SAFE_JPEG_TRANSFORM = 'w_1000/h_1000/c_pad/b_white/f_jpg';
 
 /**
- * Force a JPEG that meets Meta catalog size rules (min 500×500).
- * Inserts Cloudinary transforms after /image/upload/.
+ * Meta-safe Cloudinary JPEG URL (no commas). Plain .jpg/.png assets are returned
+ * unchanged; webp/avif get a comma-free pad transform so size/format rules pass.
  */
 export function cloudinaryJpegForMetaCatalog(url: string): string {
-  const jpeg = rewriteCloudinaryWebpToJpg(url);
+  if (!url?.includes('cloudinary.com')) {
+    return url;
+  }
+
   const marker = '/image/upload/';
-  const index = jpeg.indexOf(marker);
-  if (index === -1 || !jpeg.includes('cloudinary.com')) {
-    return jpeg;
+  const index = url.indexOf(marker);
+  if (index === -1) {
+    return rewriteCloudinaryWebpToJpg(url);
   }
-  const after = jpeg.slice(index + marker.length);
-  if (after.startsWith(`${META_JPEG_TRANSFORM}/`)) {
-    return jpeg;
+
+  const assetPath = cloudinaryAssetPathAfterUpload(url);
+  if (!assetPath) {
+    return rewriteCloudinaryWebpToJpg(url);
   }
-  return `${jpeg.slice(0, index + marker.length)}${META_JPEG_TRANSFORM}/${after}`;
+
+  const base = url.slice(0, index + marker.length);
+  const sourceIsWebpOrAvif = /\.(webp|avif)$/i.test(assetPath);
+  const jpgPath = assetPath.replace(/\.(webp|avif)$/i, '.jpg');
+
+  if (/\.(jpe?g|png)$/i.test(jpgPath) && !sourceIsWebpOrAvif) {
+    return `${base}${jpgPath}`;
+  }
+
+  return `${base}${META_SAFE_JPEG_TRANSFORM}/${jpgPath}`;
 }
 
 export function rewriteProductImageUrls(
