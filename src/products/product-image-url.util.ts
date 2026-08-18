@@ -54,8 +54,8 @@ export function cloudinaryAssetPathAfterUpload(url: string): string | null {
   return rest || null;
 }
 
-/** Slash-only transform — no commas or %2C (Meta splits image_link on literal commas). */
-const META_SAFE_JPEG_TRANSFORM = 'w_1000/h_1000/c_fill/f_jpg';
+/** Comma transform is OK — Meta only sees same-domain /api/meta-product-image URLs. */
+const META_SAFE_JPEG_TRANSFORM = 'c_fill,w_1000,h_1000,f_jpg';
 
 /**
  * Meta-safe Cloudinary JPEG URL (no commas).
@@ -84,6 +84,11 @@ export function cloudinaryJpegForMetaCatalog(url: string): string {
 
   if (normalized.includes(`${marker}${META_SAFE_JPEG_TRANSFORM}/`)) {
     return normalized;
+  }
+
+  // Strip legacy slash-only transforms so comma c_fill is applied once.
+  if (normalized.includes(`${marker}w_1000/h_1000/c_fill/f_jpg/`)) {
+    return `${base}${META_SAFE_JPEG_TRANSFORM}/${jpgPath}`;
   }
 
   return `${base}${META_SAFE_JPEG_TRANSFORM}/${jpgPath}`;

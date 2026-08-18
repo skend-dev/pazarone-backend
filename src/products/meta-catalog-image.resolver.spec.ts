@@ -28,7 +28,7 @@ describe('meta-catalog-image.resolver', () => {
     );
 
     expect(url).toContain('/products/ok.jpg');
-    expect(url).toContain('/f_jpg/');
+    expect(url).toContain('f_jpg');
   });
 
   it('falls back to og-image.png when no product image is reachable', async () => {

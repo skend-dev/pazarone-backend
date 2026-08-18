@@ -15,11 +15,9 @@ describe('product-image-url.util', () => {
   const legacySlashTransform =
     'https://res.cloudinary.com/demo/image/upload/w_1000/h_1000/c_pad/b_white/f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg';
 
-  it('strips legacy transforms and emits Meta-safe slash-only c_fill URL', () => {
+  it('strips legacy transforms and emits exact 1000x1000 c_fill JPEG URL', () => {
     const out = cloudinaryJpegForMetaCatalog(legacySlashTransform);
-    expect(out).toContain('w_1000/h_1000/c_fill/f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg');
-    expect(out).not.toContain(',');
-    expect(out).not.toContain('%2C');
+    expect(out).toContain('c_fill,w_1000,h_1000,f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg');
   });
 
   it('does not double-wrap an already Meta-safe URL', () => {
@@ -48,7 +46,7 @@ describe('product-image-url.util', () => {
 
   it('ensureMetaCatalogImageUrl forces Cloudinary to JPEG delivery URL', () => {
     const out = ensureMetaCatalogImageUrl(plainJpg, origin);
-    expect(out).toContain('/f_jpg/');
+    expect(out).toContain('f_jpg');
     expect(isMetaCatalogJpegOrPngUrl(out)).toBe(true);
   });
 
