@@ -10,7 +10,7 @@ describe('meta-catalog-feed.helpers image URLs', () => {
 
   it('metaCatalogProductImageUrl uses same-domain proxy path', () => {
     expect(metaCatalogProductImageUrl(productId, origin)).toBe(
-      `${origin}/catalog-images/${productId}.jpg?v=4`,
+      `${origin}/catalog-images/${productId}.jpg`,
     );
   });
 
@@ -23,7 +23,7 @@ describe('meta-catalog-feed.helpers image URLs', () => {
     } as Product;
 
     expect(metaFeedProductImage(product, origin)).toBe(
-      `${origin}/catalog-images/${productId}.jpg?v=4`,
+      `${origin}/catalog-images/${productId}.jpg`,
     );
     expect(metaFeedProductImage(product, origin)).not.toContain('cloudinary.com');
   });
