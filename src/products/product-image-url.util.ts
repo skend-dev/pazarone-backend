@@ -34,8 +34,8 @@ export function cloudinaryAssetPathAfterUpload(url: string): string | null {
   return rest || null;
 }
 
-/** Slash-separated transforms only — Meta catalog parsers split image_link on commas. */
-const META_SAFE_JPEG_TRANSFORM = 'w_1000/h_1000/c_pad/b_white/f_jpg';
+/** Encoded commas (%2C) — Meta splits image_link on literal commas, Cloudinary needs c_fill,w_1000,h_1000. */
+const META_SAFE_JPEG_TRANSFORM = 'c_fill%2Cw_1000%2Ch_1000/f_jpg';
 
 /**
  * Meta-safe Cloudinary JPEG URL (no commas).
@@ -60,9 +60,10 @@ export function cloudinaryJpegForMetaCatalog(url: string): string {
 
   const base = url.slice(0, index + marker.length);
   const jpgPath = assetPath.replace(/\.(webp|avif|png)$/i, '.jpg');
+  const normalized = url.split('?')[0];
 
-  if (jpgPath.startsWith(`${META_SAFE_JPEG_TRANSFORM}/`)) {
-    return `${base}${jpgPath}`;
+  if (normalized.includes(`${marker}${META_SAFE_JPEG_TRANSFORM}/`)) {
+    return normalized;
   }
 
   return `${base}${META_SAFE_JPEG_TRANSFORM}/${jpgPath}`;
