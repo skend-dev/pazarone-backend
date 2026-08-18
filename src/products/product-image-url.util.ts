@@ -55,7 +55,7 @@ export function cloudinaryAssetPathAfterUpload(url: string): string | null {
 }
 
 /** Comma transform is OK — Meta only sees same-domain /api/meta-product-image URLs. */
-const META_SAFE_JPEG_TRANSFORM = 'c_fill,w_1000,h_1000,f_jpg';
+const META_SAFE_JPEG_TRANSFORM = 'c_fill,w_1000,h_1000,f_jpg,q_90';
 
 /**
  * Meta-safe Cloudinary JPEG URL (no commas).

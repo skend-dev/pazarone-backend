@@ -17,7 +17,7 @@ describe('product-image-url.util', () => {
 
   it('strips legacy transforms and emits exact 1000x1000 c_fill JPEG URL', () => {
     const out = cloudinaryJpegForMetaCatalog(legacySlashTransform);
-    expect(out).toContain('c_fill,w_1000,h_1000,f_jpg/v1786670531/products/yb8iwymakqldkquwbjwr.jpg');
+    expect(out).toContain('c_fill,w_1000,h_1000,f_jpg,q_90/v1786670531/products/yb8iwymakqldkquwbjwr.jpg');
   });
 
   it('does not double-wrap an already Meta-safe URL', () => {
